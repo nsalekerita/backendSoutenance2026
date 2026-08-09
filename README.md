@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # IAI Horizon — Plateforme etudiants / entreprises
 
 Structure du projet :
@@ -59,3 +60,22 @@ flutter run
 2. Brancher `flutter_secure_storage`/upload de fichiers pour le CV (actuellement un simple champ URL).
 3. Ajouter les notifications (email ou push) lors de l'acceptation/refus d'une candidature.
 4. Ecrire les regles RLS (Row Level Security) Supabase correspondant aux roles.
+=======
+# nsalekerita
+
+A new Flutter project.
+
+## Getting Started
+
+This project is a starting point for a Flutter application.
+
+A few resources to get you started if this is your first Flutter project:
+
+- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
+- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
+- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev/), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.
+>>>>>>> ef323b849eede3f67d23c9c7277ff24fbc2a144d
