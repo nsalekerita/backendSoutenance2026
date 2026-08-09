@@ -1,16 +1,21 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// Client HTTP centralise vers le backend Node.js.
-/// Change [baseUrl] selon l'environnement :
-///  - emulateur Android : http://10.0.2.2:4000/api
-///  - appareil physique : http://<ip-locale-de-votre-pc>:4000/api
-///  - production        : https://votre-domaine.com/api
+/// [baseUrl] s'adapte automatiquement selon l'environnement :
+///  - Chrome (web)       : http://localhost:3000/api
+///  - emulateur Android  : http://10.0.2.2:3000/api
+///  - appareil physique  : remplace par http://<ip-locale-de-votre-pc>:3000/api
+///  - production         : remplace par https://votre-domaine.com/api
 class ApiService {
   ApiService._internal();
   static final ApiService instance = ApiService._internal();
 
-  static const String baseUrl = 'http://10.0.2.2:3000/api';
+  static String get baseUrl {
+    if (kIsWeb) return 'http://localhost:3000/api';
+    return 'http://10.0.2.2:3000/api';
+  }
 
   String? _token;
 
