@@ -1,81 +1,76 @@
-<<<<<<< HEAD
-# IAI Horizon — Plateforme etudiants / entreprises
+# IAI Horizon — Backend (JavaScript pur, Node.js/Express + Supabase)
 
-Structure du projet :
+Ceci est la version **JavaScript** (pas TypeScript) du backend — même code, même logique,
+directement exécutable avec `node`, sans étape de compilation.
 
-```
-iai-horizon/
-  backend/     -> API Node.js / Express + Supabase (a ouvrir dans VS Code)
-  frontend/    -> App Flutter (a ouvrir dans Android Studio)
-```
-
-## Backend (VS Code)
+## Démarrage
 
 ```bash
 cd backend
 npm install
-cp .env.example .env   # puis renseignez SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, ANTHROPIC_API_KEY
-npm run dev            # demarre sur http://localhost:3000
+cp .env.example .env   # puis renseigne SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, ANTHROPIC_API_KEY...
+npm start               # ou : node server.js
 ```
 
-- `database/schema_reference.sql` : schema de reference utilise par le code. **Vous avez deja votre propre
-  base Supabase** — comparez les noms de tables/colonnes avec les votres. S'ils different, adaptez soit ce
-  fichier (pour recreer les tables a l'identique), soit les requetes dans `src/controllers/*.js` (pour coller
-  a votre schema existant). Dites-moi les noms exacts de vos tables/colonnes si vous voulez que j'aligne le
-  code precisement.
-- Toutes les routes sont prefixees par `/api` (ex: `POST /api/auth/login`).
-- L'authentification se fait par JWT (`Authorization: Bearer <token>`), genere a l'inscription/connexion.
-- Le matching automatique etudiant/offre et le score de compatibilite passent par l'API Claude
-  (`src/services/ai.service.js`) — necessite une cle `ANTHROPIC_API_KEY`.
+Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
 
-## Frontend (Android Studio)
+## Avant de démarrer
 
-```bash
-cd frontend
-flutter pub get
-flutter run
+1. Crée un projet sur https://supabase.com
+2. Exécute `db/migration.sql` dans le SQL editor de ton projet Supabase.
+3. Crée un bucket Storage privé nommé `cvs` (Storage > New bucket) pour l'upload des CV.
+4. Récupère tes clés dans Project Settings > API et remplis le fichier `.env`.
+5. Récupère une clé API Anthropic (console.anthropic.com) pour les fonctionnalités IA
+   (recommandation, chatbot, aide contextuelle).
+
+## Structure (identique au découpage demandé)
+
+```
+backend/
+|-- server.js                 -> point d'entrée (démarre le serveur)
+|-- app.js                    -> configuration Express + montage des routes
+|-- config/                   -> env.js, supabase.js
+|-- middleware/                -> auth.middleware.js, error.middleware.js
+|-- utils/                     -> jwt.js, password.js, response.js, asyncHandler.js
+|-- auth/                      -> authentification etudiant / administrateur / entreprise
+|-- profils/                    -> wizard, profil étudiant, gestion de la progression
+|-- scoring/                    -> moteur de scoring (logique pure, sans IA)
+|-- ia/
+|   |-- recommendation.service.js    -> appel Claude, rédaction de la recommandation
+|   |-- chatbot.service.js           -> appel Claude + RAG (contexte étudiant + base_connaissances)
+|   |-- aide-contextuelle.service.js -> appel Claude (réponses courtes)
+|   `-- claude.client.js             -> wrapper autour de l'API Anthropic
+|-- offres/                     -> CRUD offres, matching, validation administrateur
+|-- candidatures/
+|-- filieres/                    -> fiches filières + critères de scoring
+|-- admin/
+`-- db/migration.sql            -> ta migration SQL (schéma complet Supabase)
 ```
 
-- `lib/core/services/api_service.dart` : URL du backend a adapter selon l'environnement
-  (`10.0.2.2` pour l'emulateur Android, IP locale pour un telephone physique, domaine en production).
-- `lib/screens/home/splash_screen.dart` : ecran de lancement avec logo qui tourne sur fond degrade vert,
-  comme demande, avant d'afficher la page d'accueil (`home_screen.dart`, votre design d'origine).
-- Espaces separes selon le role : `screens/student/`, `screens/company/`, `screens/admin/`.
+## Points d'entrée API (résumé)
 
-## Ce qui est deja fonctionnel
+- `POST /api/auth/register/etudiant` / `/register/entreprise` / `/login` / `/google`
+- `GET  /api/auth/me`
+- `GET/PATCH /api/profils/moi`, `/moi/competences`, `/moi/interets`, `/moi/wizard/*`, `/moi/cv/upload-url`
+- `GET  /api/offres`, `GET /api/offres/:id`, `POST /api/offres` (entreprise)
+- `POST /api/candidatures`, `GET /api/candidatures/moi`, `PATCH /api/candidatures/:id/accepter|refuser`
+- `GET  /api/filieres`, `POST /api/filieres` (administrateur)
+- `GET  /api/admin/stats`, `/admin/comptes`, `/admin/offres`, `PATCH /admin/offres/:id/statut`
+- `POST /api/ia/recommandations/generer`, `GET /api/ia/recommandations/derniere`
+- `POST /api/ia/chat`, `GET /api/ia/chat/:conversationId`
+- `POST /api/ia/aide-contextuelle`
 
-- Inscription / connexion (etudiant, entreprise), validation admin des comptes entreprise
-- Profil etudiant (filiere, niveau, centres d'interet, objectifs), notes, competences
-- Test d'orientation -> score de compatibilite + explication (IA)
-- Recommandations personnalisees (technologies, certifications, formations, metiers)
-- Chatbot assistant IA
-- Publication d'offres (entreprise), matching automatique etudiants <-> offre (IA)
-- Candidature, suivi, acceptation/refus
-- Recherche manuelle de profils etudiants (entreprise)
-- Statistiques globales + gestion des comptes (admin)
+## Testé
 
-## Prochaines etapes suggerees
+Ce code a été compilé depuis la version TypeScript (qui passait `tsc --noEmit` sans erreur),
+puis lancé avec `node server.js` : le serveur démarre et répond correctement sur `/health`.
 
-1. Me communiquer le schema exact de votre base Supabase pour aligner les requetes a 100%.
-2. Brancher `flutter_secure_storage`/upload de fichiers pour le CV (actuellement un simple champ URL).
-3. Ajouter les notifications (email ou push) lors de l'acceptation/refus d'une candidature.
-4. Ecrire les regles RLS (Row Level Security) Supabase correspondant aux roles.
-=======
-# nsalekerita
+## Reste à finaliser (voir commentaires dans le code)
 
-A new Flutter project.
-
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
->>>>>>> ef323b849eede3f67d23c9c7277ff24fbc2a144d
+- **Google OAuth** (`auth/auth.service.js`, fonction `loginOrRegisterWithGoogle`) : à connecter
+  avec la vérification du `id_token` Google côté serveur.
+- **Recherche vectorielle RAG** (`ia/chatbot.service.js`) : utilise une recherche texte simple ;
+  la colonne `embedding` et l'index `ivfflat` sont déjà en base pour brancher une vraie recherche
+  par similarité une fois un pipeline d'embeddings en place.
+- **Blocage de compte administrateur** (`admin/admin.service.js`, fonction `bloquerCompte`) : nécessite la
+  colonne `users.actif` (déjà ajoutée à la fin de `db/migration.sql`).

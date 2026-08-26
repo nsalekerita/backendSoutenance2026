@@ -7,7 +7,7 @@ class SessionService {
   static final SessionService instance = SessionService._internal();
 
   String? token;
-  String? role; // 'etudiant' | 'entreprise' | 'admin'
+  String? role; // 'etudiant' | 'entreprise' | 'administrateur'
   String? userId;
 
   Future<void> loadFromDisk() async {

@@ -14,7 +14,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, dynamic>? _stats;
-  List<dynamic> _users = [];
+  List<dynamic> _offers = [];
   bool _loading = true;
 
   @override
@@ -26,16 +26,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final statsRes = await ApiService.instance.get('/admin/stats');
-    final usersRes = await ApiService.instance.get('/admin/users', query: {'statut': 'en_attente'});
+    final offersRes = await ApiService.instance.get('/admin/offres', query: {'statut': 'en_attente'});
     setState(() {
       _stats = statsRes['data'] as Map<String, dynamic>;
-      _users = usersRes['data'] as List<dynamic>;
+      _offers = offersRes['data'] as List<dynamic>;
       _loading = false;
     });
   }
 
   Future<void> _validate(String id) async {
-    await ApiService.instance.patch('/admin/users/$id/status', {'statut': 'actif'});
+    await ApiService.instance.patch('/admin/offres/$id/statut', {'statut': 'validee'});
     _load();
   }
 
@@ -78,15 +78,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(height: 24),
             Text('Comptes entreprises en attente de validation', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
-            if (_users.isEmpty) const Text('Aucun compte en attente.'),
-            ..._users.map((u) {
-              final user = u as Map<String, dynamic>;
+            if (_offers.isEmpty) const Text('Aucune offre en attente.'),
+            ..._offers.map((offerData) {
+              final offer = offerData as Map<String, dynamic>;
               return Card(
                 child: ListTile(
-                  title: Text(user['nom'] ?? ''),
-                  subtitle: Text(user['email'] ?? ''),
+                  title: Text(offer['titre'] ?? ''),
+                  subtitle: Text(offer['entreprises']?['nom'] ?? ''),
                   trailing: ElevatedButton(
-                    onPressed: () => _validate(user['id']),
+                    onPressed: () => _validate(offer['id']),
                     child: const Text('Valider'),
                   ),
                 ),

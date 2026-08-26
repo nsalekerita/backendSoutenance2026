@@ -43,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
         case 'entreprise':
           destination = const CompanyDashboardScreen();
           break;
-        case 'admin':
+        case 'administrateur':
           destination = const AdminDashboardScreen();
           break;
         default:
