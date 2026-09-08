@@ -1,1 +1,8 @@
-c:\monProjet\lol\node_modules
+node_modules/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.log
+coverage/
+.DS_Store

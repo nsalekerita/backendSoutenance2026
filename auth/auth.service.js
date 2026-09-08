@@ -62,7 +62,7 @@ async function registerEntreprise(input) {
 async function login(email, password) {
     const { data: user } = await supabase_1.supabaseAdmin
         .from('users')
-        .select('id, email, password_hash, role')
+        .select('id, email, password_hash, role, actif')
         .eq('email', email)
         .maybeSingle();
     if (!user)
@@ -70,6 +70,8 @@ async function login(email, password) {
     const valid = await (0, password_1.comparePassword)(password, user.password_hash);
     if (!valid)
         throw new HttpError('E-mail ou mot de passe incorrect', 401);
+    if (user.actif === false)
+        throw new HttpError('Ce compte a été désactivé', 403);
     const role = user.role === 'admin' ? 'administrateur' : user.role;
     const profileId = await resolveProfileId(user.id, role);
     const authUser = { id: user.id, email: user.email, role, profileId };

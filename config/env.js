@@ -1,11 +1,5 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.env = void 0;
-const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config();
+require("dotenv").config();
 function optional(name, fallback = '') {
     const value = process.env[name] ?? fallback;
     if (!value)
@@ -24,4 +18,8 @@ exports.env = {
     geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.6-flash',
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean),
 };
