@@ -1,49 +1,25 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", { value: true });
 exports.matching = exports.mesOffres = exports.getById = exports.listerPubliques = exports.publier = void 0;
 const asyncHandler_1 = require("../utils/asyncHandler");
 const response_1 = require("../utils/response");
-const service = __importStar(require("./offres.service"));
+const service = require("./offres.service");
+const { z } = require("zod");
+const publierOffreSchema = z.object({
+    titre: z.string().min(1),
+    type: z.enum(['stage', 'emploi']),
+    description: z.string().max(5000).optional().nullable(),
+    competences_requises: z.array(z.string()).optional().nullable(),
+    filieres_ciblees: z.array(z.string().uuid()).optional().nullable(),
+    localisation: z.string().max(200).optional().nullable(),
+    date_limite: z.string().optional().nullable(),
+});
 exports.publier = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (req.user?.role !== 'entreprise' || !req.user.profileId)
         return (0, response_1.fail)(res, 'Réservé aux entreprises', 403);
-    const { titre, type } = req.body ?? {};
-    if (!titre || !type)
-        return (0, response_1.fail)(res, 'titre et type requis', 422);
-    const data = await service.publierOffre(req.user.profileId, req.body);
+    const parsed = publierOffreSchema.safeParse(req.body);
+    if (!parsed.success)
+        return (0, response_1.fail)(res, 'Informations invalides ou manquantes', 422, parsed.error.flatten());
+    const data = await service.publierOffre(req.user.profileId, parsed.data);
     return (0, response_1.ok)(res, data, 201);
 });
 exports.listerPubliques = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
@@ -64,8 +40,8 @@ exports.mesOffres = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     return (0, response_1.ok)(res, data);
 });
 exports.matching = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    if (req.user?.role !== 'entreprise')
+    if (req.user?.role !== 'entreprise' || !req.user.profileId)
         return (0, response_1.fail)(res, 'Réservé aux entreprises', 403);
-    const data = await service.matchingEtudiants(req.params.id);
+    const data = await service.matchingEtudiants(req.params.id, req.user.profileId);
     return (0, response_1.ok)(res, data);
 });

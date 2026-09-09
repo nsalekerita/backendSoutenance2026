@@ -6,10 +6,26 @@ exports.getOffre = getOffre;
 exports.listerOffresEntreprise = listerOffresEntreprise;
 exports.matchingEtudiants = matchingEtudiants;
 const supabase_1 = require("../config/supabase");
+/** Liste blanche des champs acceptés à la création d'une offre : évite le mass-assignment. */
+const CHAMPS_OFFRE_AUTORISES = [
+    'titre',
+    'description',
+    'type',
+    'competences_requises',
+    'filieres_ciblees',
+    'localisation',
+    'date_limite',
+];
 async function publierOffre(entrepriseId, input) {
+    const payload = {};
+    for (const champ of CHAMPS_OFFRE_AUTORISES) {
+        if (input?.[champ] !== undefined) {
+            payload[champ] = input[champ];
+        }
+    }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('offres')
-        .insert({ entreprise_id: entrepriseId, ...input, statut: 'en_attente' })
+        .insert({ ...payload, entreprise_id: entrepriseId, statut: 'en_attente' })
         .select()
         .single();
     if (error)
@@ -54,10 +70,15 @@ async function listerOffresEntreprise(entrepriseId) {
  * une des filières ciblées. Version simple par intersection ; peut être
  * enrichie par le même moteur de scoring que scoring.service.
  */
-async function matchingEtudiants(offreId) {
+async function matchingEtudiants(offreId, entrepriseId) {
     const offre = await getOffre(offreId);
     if (!offre)
         return [];
+    if (entrepriseId && offre.entreprise_id !== entrepriseId) {
+        const err = new Error("Cette offre n'appartient pas à votre entreprise");
+        err.status = 403;
+        throw err;
+    }
     const competencesRequises = Array.isArray(offre.competences_requises)
         ? offre.competences_requises
         : [];

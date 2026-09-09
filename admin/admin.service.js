@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.statistiquesGlobales = statistiquesGlobales;
 exports.listerComptes = listerComptes;
 exports.bloquerCompte = bloquerCompte;
+exports.debloquerCompte = debloquerCompte;
 exports.listerOffresPourAdmin = listerOffresPourAdmin;
 exports.changerStatutOffre = changerStatutOffre;
 exports.validerEntreprise = validerEntreprise;
@@ -36,13 +37,27 @@ async function listerComptes(role) {
         throw error;
     return data ?? [];
 }
-async function bloquerCompte(_userId) {
-    // NB: la migration fournie n'a pas de colonne "actif"/"bloque" sur users.
-    // À ajouter (ex: `alter table users add column actif boolean not null default true;`)
-    // avant de pouvoir réellement bloquer un compte. Squelette laissé en place.
-    throw Object.assign(new Error("Ajouter une colonne 'actif' à la table users pour activer ce blocage"), {
-        status: 501,
-    });
+async function setCompteActif(userId, actif) {
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('users')
+        .update({ actif })
+        .eq('id', userId)
+        .select('id, email, role, actif')
+        .maybeSingle();
+    if (error)
+        throw error;
+    if (!data) {
+        const err = new Error('Compte introuvable');
+        err.status = 404;
+        throw err;
+    }
+    return data;
+}
+async function bloquerCompte(userId) {
+    return setCompteActif(userId, false);
+}
+async function debloquerCompte(userId) {
+    return setCompteActif(userId, true);
 }
 async function listerOffresPourAdmin(statut) {
     let query = supabase_1.supabaseAdmin.from('offres').select('*, entreprises(nom)');

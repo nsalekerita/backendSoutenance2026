@@ -8,8 +8,9 @@ directement exécutable avec `node`, sans étape de compilation.
 ```bash
 cd backend
 npm install
-cp .env.example .env   # puis renseigne SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, ANTHROPIC_API_KEY...
+cp .env.example .env   # puis renseigne SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, GEMINI_API_KEY...
 npm start               # ou : node server.js
+npm test                # exécute la suite de tests (jest)
 ```
 
 Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
@@ -17,11 +18,14 @@ Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
 ## Avant de démarrer
 
 1. Crée un projet sur https://supabase.com
-2. Exécute `db/migration.sql` dans le SQL editor de ton projet Supabase.
+2. Exécute `db/migration.sql` puis `db/migration_rls.sql` dans le SQL editor de ton projet Supabase
+   (le second active la Row Level Security en défense en profondeur — voir le fichier pour le détail).
 3. Crée un bucket Storage privé nommé `cvs` (Storage > New bucket) pour l'upload des CV.
 4. Récupère tes clés dans Project Settings > API et remplis le fichier `.env`.
-5. Récupère une clé API Anthropic (console.anthropic.com) pour les fonctionnalités IA
+5. Récupère une clé API Gemini (aistudio.google.com/apikey) pour les fonctionnalités IA
    (recommandation, chatbot, aide contextuelle).
+6. En production, renseigne `CORS_ALLOWED_ORIGINS` avec le(s) domaine(s) exact(s) du front —
+   sans cette variable, en environnement `NODE_ENV=development` toutes les origines sont acceptées.
 
 ## Structure (identique au découpage demandé)
 
@@ -72,5 +76,18 @@ puis lancé avec `node server.js` : le serveur démarre et répond correctement 
 - **Recherche vectorielle RAG** (`ia/chatbot.service.js`) : utilise une recherche texte simple ;
   la colonne `embedding` et l'index `ivfflat` sont déjà en base pour brancher une vraie recherche
   par similarité une fois un pipeline d'embeddings en place.
-- **Blocage de compte administrateur** (`admin/admin.service.js`, fonction `bloquerCompte`) : nécessite la
-  colonne `users.actif` (déjà ajoutée à la fin de `db/migration.sql`).
+
+## Sécurité
+
+- Toutes les routes `entreprise` (candidatures, offres) vérifient que la ressource appartient bien
+  à l'entreprise authentifiée avant lecture/écriture (protection IDOR).
+- La création d'offre utilise une liste blanche de champs (protection contre le mass-assignment).
+- Rate limiting sur `/api/auth/login` et `/api/auth/register/*` (20 requêtes / 15 min / IP).
+- CORS restreint via `CORS_ALLOWED_ORIGINS` en production.
+- Les erreurs 500 ne renvoient jamais leur message brut au client en production
+  (`middleware/error.middleware.js`).
+- `db/migration_rls.sql` active la Row Level Security sur toutes les tables (défense en profondeur ;
+  le backend utilise la clé service role qui contourne la RLS, donc les vérifications applicatives
+  restent la protection principale).
+- Blocage de compte administrateur (`admin/admin.service.js`, `bloquerCompte`/`debloquerCompte`) :
+  utilise la colonne `users.actif` (ajoutée dans `db/migration.sql`), vérifiée aussi au login.

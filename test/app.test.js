@@ -1,0 +1,35 @@
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = 'test-secret';
+process.env.SUPABASE_URL = 'https://example.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+
+const request = require('supertest');
+const { app } = require('../app');
+
+describe('GET /health', () => {
+  test('returns 200 and service status', async () => {
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'ok' });
+  });
+});
+
+describe('unknown route', () => {
+  test('returns 404 with the standard error envelope', async () => {
+    const res = await request(app).get('/api/route-inexistante');
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ success: false });
+  });
+});
+
+describe('protected routes', () => {
+  test('reject requests without an Authorization header', async () => {
+    const res = await request(app).get('/api/admin/stats');
+    expect(res.status).toBe(401);
+  });
+
+  test('reject requests with an invalid token', async () => {
+    const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer invalid-token');
+    expect(res.status).toBe(401);
+  });
+});
