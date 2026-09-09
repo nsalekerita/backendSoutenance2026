@@ -9,9 +9,23 @@ const supabase = createClient(
 );
 
 async function main() {
-  const email = 'admin@iaihorizon.com'; // changez si vous voulez un autre e-mail
-  const password = 'VotreMotDePasseSolide123!'; // changez avant d'exécuter
-  const nomAdmin = 'Administrateur IAI Horizon';
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  const nomAdmin = process.env.ADMIN_NOM || 'Administrateur IAI Horizon';
+
+  if (!email || !password) {
+    console.error(
+      "Erreur: définis ADMIN_EMAIL et ADMIN_PASSWORD (variables d'environnement) avant d'exécuter ce script.\n" +
+      'Exemple: ADMIN_EMAIL=admin@exemple.com ADMIN_PASSWORD="MotDePasseSolide123!" node create-admin.js'
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (password.length < 8) {
+    console.error('Erreur: ADMIN_PASSWORD doit contenir au moins 8 caractères.');
+    process.exitCode = 1;
+    return;
+  }
 
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(password, salt);
@@ -24,6 +38,7 @@ async function main() {
 
   if (userErr) {
     console.error('Erreur création user:', userErr.message);
+    process.exitCode = 1;
     return;
   }
 
@@ -33,6 +48,7 @@ async function main() {
 
   if (adminErr) {
     console.error('Erreur création profil administrateur:', adminErr.message);
+    process.exitCode = 1;
     return;
   }
 

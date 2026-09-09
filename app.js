@@ -1,33 +1,48 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.app = void 0;
-const express_1 = __importDefault(require("express"));
-const cors_1 = __importDefault(require("cors"));
-const helmet_1 = __importDefault(require("helmet"));
-const morgan_1 = __importDefault(require("morgan"));
-const auth_routes_1 = __importDefault(require("./auth/auth.routes"));
-const profils_routes_1 = __importDefault(require("./profils/profils.routes"));
-const offres_routes_1 = __importDefault(require("./offres/offres.routes"));
-const candidatures_routes_1 = __importDefault(require("./candidatures/candidatures.routes"));
-const filieres_routes_1 = __importDefault(require("./filieres/filieres.routes"));
-const admin_routes_1 = __importDefault(require("./admin/admin.routes"));
-const ia_routes_1 = __importDefault(require("./ia/ia.routes"));
-const error_middleware_1 = require("./middleware/error.middleware");
-exports.app = (0, express_1.default)();
-exports.app.use((0, helmet_1.default)());
-exports.app.use((0, cors_1.default)());
-exports.app.use(express_1.default.json());
-exports.app.use((0, morgan_1.default)('dev'));
-exports.app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'iai-horizon-backend' }));
-exports.app.use('/api/auth', auth_routes_1.default);
-exports.app.use('/api/profils', profils_routes_1.default);
-exports.app.use('/api/offres', offres_routes_1.default);
-exports.app.use('/api/candidatures', candidatures_routes_1.default);
-exports.app.use('/api/filieres', filieres_routes_1.default);
-exports.app.use('/api/admin', admin_routes_1.default);
-exports.app.use('/api/ia', ia_routes_1.default);
-exports.app.use(error_middleware_1.notFoundMiddleware);
-exports.app.use(error_middleware_1.errorMiddleware);
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
+const authRoutes = require("./auth/auth.routes");
+const profilsRoutes = require("./profils/profils.routes");
+const offresRoutes = require("./offres/offres.routes");
+const candidaturesRoutes = require("./candidatures/candidatures.routes");
+const filieresRoutes = require("./filieres/filieres.routes");
+const adminRoutes = require("./admin/admin.routes");
+const iaRoutes = require("./ia/ia.routes");
+const { notFoundMiddleware, errorMiddleware } = require("./middleware/error.middleware");
+const { env } = require("./config/env");
+
+const app = express();
+exports.app = app;
+
+app.set('trust proxy', 1);
+app.use(helmet());
+const allowedOrigins = env.corsAllowedOrigins;
+app.use(cors({
+    origin: allowedOrigins.length === 0 ? true : allowedOrigins,
+}));
+app.use(express.json());
+app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Trop de tentatives, réessayez plus tard' },
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'iai-horizon-backend' }));
+app.use('/api/auth', authRoutes);
+app.use('/api/profils', profilsRoutes);
+app.use('/api/offres', offresRoutes);
+app.use('/api/candidatures', candidaturesRoutes);
+app.use('/api/filieres', filieresRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/ia', iaRoutes);
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
