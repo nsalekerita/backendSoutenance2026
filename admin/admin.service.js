@@ -8,6 +8,7 @@ exports.listerOffresPourAdmin = listerOffresPourAdmin;
 exports.changerStatutOffre = changerStatutOffre;
 exports.validerEntreprise = validerEntreprise;
 const supabase_1 = require("../config/supabase");
+const notifications_1 = require("../notifications/notifications.service");
 async function statistiquesGlobales() {
     const [{ count: nbEtudiants }, { count: nbEntreprises }, { count: nbOffres }, { count: nbCandidatures }] = await Promise.all([
         supabase_1.supabaseAdmin.from('etudiants').select('*', { count: 'exact', head: true }),
@@ -68,10 +69,28 @@ async function listerOffresPourAdmin(statut) {
         throw error;
     return data ?? [];
 }
+const LIBELLES_STATUT_OFFRE = {
+    validee: 'a été validée et est désormais visible par les étudiants',
+    rejetee: 'a été rejetée',
+    cloturee: 'a été clôturée',
+};
 async function changerStatutOffre(offreId, statut) {
-    const { data, error } = await supabase_1.supabaseAdmin.from('offres').update({ statut }).eq('id', offreId).select().single();
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('offres')
+        .update({ statut })
+        .eq('id', offreId)
+        .select('*, entreprises(id)')
+        .single();
     if (error)
         throw error;
+    if (data.entreprises) {
+        await notifications_1.notifierEntrepriseDeOffre(data.entreprises.id, {
+            titre: 'Statut de votre offre mis à jour',
+            corps: `Votre offre "${data.titre}" ${LIBELLES_STATUT_OFFRE[statut] ?? `est passée au statut "${statut}"`}.`,
+            type: 'offre_statut',
+            data: { offreId, statut },
+        });
+    }
     return data;
 }
 async function validerEntreprise(entrepriseId) {

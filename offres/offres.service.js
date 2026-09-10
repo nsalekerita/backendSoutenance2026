@@ -6,6 +6,7 @@ exports.getOffre = getOffre;
 exports.listerOffresEntreprise = listerOffresEntreprise;
 exports.matchingEtudiants = matchingEtudiants;
 const supabase_1 = require("../config/supabase");
+const notifications_1 = require("../notifications/notifications.service");
 /** Liste blanche des champs acceptés à la création d'une offre : évite le mass-assignment. */
 const CHAMPS_OFFRE_AUTORISES = [
     'titre',
@@ -30,6 +31,12 @@ async function publierOffre(entrepriseId, input) {
         .single();
     if (error)
         throw error;
+    await notifications_1.notifierAdminsNouvelleOffre({
+        titre: 'Nouvelle offre à valider',
+        corps: `Une nouvelle offre "${data.titre}" attend votre validation.`,
+        type: 'offre_a_valider',
+        data: { offreId: data.id },
+    });
     return data;
 }
 /** Liste publique (étudiants) : uniquement les offres validées */

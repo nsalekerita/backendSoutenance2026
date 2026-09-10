@@ -30,6 +30,9 @@ alter table candidatures enable row level security;
 alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table base_connaissances enable row level security;
+alter table otp_codes enable row level security;
+alter table device_tokens enable row level security;
+alter table notifications enable row level security;
 
 -- etudiant_notes est créée hors migration.sql (voir profils.service.js) ;
 -- protège-la de la même façon si tu la crées via une migration séparée :

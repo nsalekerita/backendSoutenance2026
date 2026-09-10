@@ -198,6 +198,58 @@ create index idx_messages_conversation_id on messages(conversation_id);
 -- =========================================================
 alter table users add column if not exists actif boolean not null default true;
 
+-- =========================================================
+-- AJOUT NÉCESSAIRE POUR LE BACKEND : vérification d'e-mail par code OTP
+-- (inscription) et réinitialisation du mot de passe par code OTP.
+-- =========================================================
+alter table users add column if not exists email_verifie boolean not null default false;
+
+do $$ begin
+  create type otp_purpose as enum ('inscription', 'reinitialisation');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists otp_codes (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  code_hash text not null,
+  purpose otp_purpose not null,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  tentatives int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_otp_codes_email_purpose on otp_codes(email, purpose);
+
+-- =========================================================
+-- AJOUT NÉCESSAIRE POUR LE BACKEND : notifications push (Firebase Cloud
+-- Messaging). Un même utilisateur peut avoir plusieurs appareils, donc un
+-- token par (user_id, token) ; upsert du last_used_at à chaque enregistrement.
+-- =========================================================
+create table if not exists device_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  token text not null,
+  plateforme text,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz not null default now(),
+  unique (user_id, token)
+);
+create index if not exists idx_device_tokens_user_id on device_tokens(user_id);
+
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  titre text not null,
+  corps text,
+  type text,
+  data jsonb,
+  lue boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_notifications_user_id on notifications(user_id);
+
 -- Bucket Storage pour les CV (à créer aussi depuis l'UI Supabase > Storage si cette
 -- commande n'est pas disponible dans votre plan) :
 -- insert into storage.buckets (id, name, public) values ('cvs', 'cvs', false);
