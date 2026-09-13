@@ -1,0 +1,11 @@
+"use strict";
+const { Router } = require("express");
+const { requireAuth } = require("../middleware/auth.middleware");
+const controller = require("./notifications.controller");
+const router = Router();
+router.use(requireAuth);
+router.post('/device-token', controller.enregistrerToken);
+router.delete('/device-token', controller.supprimerToken);
+router.get('/', controller.mesNotifications);
+router.patch('/:id/lue', controller.marquerLue);
+module.exports = router;

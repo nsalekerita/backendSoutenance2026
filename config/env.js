@@ -18,6 +18,12 @@ exports.env = {
     geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.6-flash',
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    smtpHost: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    smtpPort: Number(process.env.SMTP_PORT ?? 587),
+    smtpUser: optional('SMTP_USER'),
+    smtpPass: optional('SMTP_PASS'),
+    smtpFrom: process.env.SMTP_FROM ?? 'IAI Horizon <no-reply@iaihorizon.com>',
+    firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
     corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? '')
         .split(',')
         .map((origin) => origin.trim())
