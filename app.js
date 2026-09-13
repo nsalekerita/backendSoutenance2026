@@ -11,6 +11,7 @@ const candidaturesRoutes = require("./candidatures/candidatures.routes");
 const filieresRoutes = require("./filieres/filieres.routes");
 const adminRoutes = require("./admin/admin.routes");
 const iaRoutes = require("./ia/ia.routes");
+const notificationsRoutes = require("./notifications/notifications.routes");
 const { notFoundMiddleware, errorMiddleware } = require("./middleware/error.middleware");
 const { env } = require("./config/env");
 
@@ -35,6 +36,8 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/otp', authLimiter);
+app.use('/api/auth/mot-de-passe', authLimiter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'iai-horizon-backend' }));
 app.use('/api/auth', authRoutes);
@@ -44,5 +47,6 @@ app.use('/api/candidatures', candidaturesRoutes);
 app.use('/api/filieres', filieresRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ia', iaRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

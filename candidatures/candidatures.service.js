@@ -5,6 +5,7 @@ exports.postuler = postuler;
 exports.mesCandidatures = mesCandidatures;
 exports.candidaturesPourOffre = candidaturesPourOffre;
 const supabase_1 = require("../config/supabase");
+const notifications_1 = require("../notifications/notifications.service");
 async function postuler(etudiantId, offreId, cv_url, message) {
     const { data: existante } = await supabase_1.supabaseAdmin
         .from('candidatures')
@@ -20,10 +21,18 @@ async function postuler(etudiantId, offreId, cv_url, message) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('candidatures')
         .insert({ offre_id: offreId, etudiant_id: etudiantId, cv_url, message, statut: 'envoyee' })
-        .select()
+        .select('*, offres(titre, entreprise_id)')
         .single();
     if (error)
         throw error;
+    if (data.offres) {
+        await notifications_1.notifierEntrepriseDeOffre(data.offres.entreprise_id, {
+            titre: 'Nouvelle candidature',
+            corps: `Un étudiant a postulé à votre offre "${data.offres.titre}".`,
+            type: 'candidature_recue',
+            data: { candidatureId: data.id, offreId },
+        });
+    }
     return data;
 }
 async function mesCandidatures(etudiantId) {
@@ -83,6 +92,11 @@ async function candidaturesPourOffre(offreId, entrepriseId) {
         throw error;
     return data ?? [];
 }
+const LIBELLES_STATUT = {
+    vue: 'a été vue par le recruteur',
+    acceptee: 'a été acceptée',
+    refusee: "n'a pas été retenue",
+};
 async function changerStatut(candidatureId, statut, entrepriseId) {
     const candidature = await getCandidatureAvecOffre(candidatureId);
     if (candidature.offres?.entreprise_id !== entrepriseId) {
@@ -94,11 +108,16 @@ async function changerStatut(candidatureId, statut, entrepriseId) {
         .from('candidatures')
         .update({ statut })
         .eq('id', candidatureId)
-        .select()
+        .select('*, offres(titre)')
         .single();
     if (error)
         throw error;
-    // TODO: notifier l'étudiant (email / notification push) que sa candidature a changé de statut.
+    await notifications_1.notifierEtudiantDeCandidature(data.etudiant_id, {
+        titre: 'Mise à jour de votre candidature',
+        corps: `Votre candidature pour "${data.offres?.titre ?? 'une offre'}" ${LIBELLES_STATUT[statut] ?? `est passée à "${statut}"`}.`,
+        type: 'candidature_statut',
+        data: { candidatureId, statut },
+    });
     return data;
 }
 const accepter = (candidatureId, entrepriseId) => changerStatut(candidatureId, 'acceptee', entrepriseId);

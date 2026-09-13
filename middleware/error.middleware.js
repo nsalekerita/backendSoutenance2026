@@ -13,7 +13,8 @@ function errorMiddleware(err, _req, res, _next) {
     // Les erreurs métier (4xx) ont un message volontairement rédigé pour l'utilisateur.
     const exposeMessage = status < 500 || env_1.env.nodeEnv !== 'production';
     const message = exposeMessage ? (err?.message ?? 'Erreur interne du serveur') : 'Erreur interne du serveur';
-    return (0, response_1.fail)(res, message, status);
+    const details = exposeMessage ? err?.details : undefined;
+    return (0, response_1.fail)(res, message, status, details);
 }
 function notFoundMiddleware(_req, res) {
     return (0, response_1.fail)(res, 'Route introuvable', 404);
