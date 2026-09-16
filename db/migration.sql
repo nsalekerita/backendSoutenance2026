@@ -204,6 +204,46 @@ alter table users add column if not exists actif boolean not null default true;
 -- =========================================================
 alter table users add column if not exists email_verifie boolean not null default false;
 
+-- Colonnes du profil et des candidatures utilisées par l'application Flutter.
+alter table etudiants add column if not exists filiere text;
+alter table etudiants add column if not exists specialite text;
+alter table etudiants add column if not exists photo_url text;
+alter table etudiants add column if not exists cv_chemin text;
+alter table etudiants add column if not exists cv_nom_fichier text;
+alter table candidatures add column if not exists email_contact text;
+alter table candidatures add column if not exists telephone_contact text;
+alter table candidatures add column if not exists localisation text;
+alter table candidatures add column if not exists lettre_motivation_url text;
+alter table candidatures add column if not exists lettre_recommandation_url text;
+
+create table if not exists etudiant_notes (
+  id uuid primary key default gen_random_uuid(),
+  etudiant_id uuid not null references etudiants(id) on delete cascade,
+  chemin_fichier text not null,
+  nom_fichier text,
+  url text not null,
+  semestre text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_etudiant_notes_etudiant_id on etudiant_notes(etudiant_id);
+
+create table if not exists entreprise_conversations (
+  id uuid primary key default gen_random_uuid(),
+  entreprise_id uuid not null references entreprises(id) on delete cascade,
+  etudiant_id uuid not null references etudiants(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (entreprise_id, etudiant_id)
+);
+create table if not exists entreprise_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references entreprise_conversations(id) on delete cascade,
+  expediteur_type text not null check (expediteur_type in ('entreprise', 'etudiant')),
+  expediteur_id uuid not null,
+  contenu text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_entreprise_messages_conversation on entreprise_messages(conversation_id);
+
 do $$ begin
   create type otp_purpose as enum ('inscription', 'reinitialisation');
 exception
