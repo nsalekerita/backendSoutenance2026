@@ -61,11 +61,90 @@ async function bloquerCompte(userId) {
 async function debloquerCompte(userId) {
     return setCompteActif(userId, true);
 }
+// Supprime "à la main" toutes les données qui dépendent du compte avant de
+// supprimer la ligne users elle-même : certaines tables ajoutées après la
+// migration initiale (device_tokens, notifications, entreprise_conversations,
+// etudiant_notes...) ne sont pas forcément en "on delete cascade" sur la base
+// réelle, ce qui faisait échouer la suppression avec une violation de
+// contrainte de clé étrangère (le blocage, qui ne fait qu'un update, n'est
+// lui jamais concerné).
+async function nettoyerDependancesEtudiant(etudiantId) {
+    const { data: recommandations } = await supabase_1.supabaseAdmin
+        .from('recommandations').select('id').eq('etudiant_id', etudiantId);
+    const recommandationIds = (recommandations ?? []).map((r) => r.id);
+    if (recommandationIds.length) {
+        await supabase_1.supabaseAdmin.from('scores_filieres').delete().in('recommandation_id', recommandationIds);
+    }
+    const { data: profilsWizard } = await supabase_1.supabaseAdmin
+        .from('profils_wizard').select('id').eq('etudiant_id', etudiantId);
+    const profilsWizardIds = (profilsWizard ?? []).map((p) => p.id);
+    if (profilsWizardIds.length) {
+        await supabase_1.supabaseAdmin.from('wizard_reponses').delete().in('profil_wizard_id', profilsWizardIds);
+    }
+    const { data: conversations } = await supabase_1.supabaseAdmin
+        .from('conversations').select('id').eq('etudiant_id', etudiantId);
+    const conversationIds = (conversations ?? []).map((c) => c.id);
+    if (conversationIds.length) {
+        await supabase_1.supabaseAdmin.from('messages').delete().in('conversation_id', conversationIds);
+    }
+    const { data: entrepriseConversations } = await supabase_1.supabaseAdmin
+        .from('entreprise_conversations').select('id').eq('etudiant_id', etudiantId);
+    const entrepriseConversationIds = (entrepriseConversations ?? []).map((c) => c.id);
+    if (entrepriseConversationIds.length) {
+        await supabase_1.supabaseAdmin.from('entreprise_messages').delete().in('conversation_id', entrepriseConversationIds);
+    }
+    await Promise.all([
+        supabase_1.supabaseAdmin.from('profils_wizard').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('etudiant_competences').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('etudiant_interets').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('recommandations').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('candidatures').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('conversations').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('etudiant_notes').delete().eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('entreprise_conversations').delete().eq('etudiant_id', etudiantId),
+    ]);
+}
+async function nettoyerDependancesEntreprise(entrepriseId) {
+    const { data: offres } = await supabase_1.supabaseAdmin
+        .from('offres').select('id').eq('entreprise_id', entrepriseId);
+    const offreIds = (offres ?? []).map((o) => o.id);
+    if (offreIds.length) {
+        await supabase_1.supabaseAdmin.from('candidatures').delete().in('offre_id', offreIds);
+    }
+    const { data: entrepriseConversations } = await supabase_1.supabaseAdmin
+        .from('entreprise_conversations').select('id').eq('entreprise_id', entrepriseId);
+    const entrepriseConversationIds = (entrepriseConversations ?? []).map((c) => c.id);
+    if (entrepriseConversationIds.length) {
+        await supabase_1.supabaseAdmin.from('entreprise_messages').delete().in('conversation_id', entrepriseConversationIds);
+    }
+    await Promise.all([
+        supabase_1.supabaseAdmin.from('offres').delete().eq('entreprise_id', entrepriseId),
+        supabase_1.supabaseAdmin.from('entreprise_conversations').delete().eq('entreprise_id', entrepriseId),
+    ]);
+}
 async function supprimerCompte(userId, adminUserId) {
     if (userId === adminUserId) {
         const err = new Error('Vous ne pouvez pas supprimer votre propre compte');
         err.status = 409;
         throw err;
+    }
+    const { data: compte, error: erreurCompte } = await supabase_1.supabaseAdmin
+        .from('users').select('id, role').eq('id', userId).maybeSingle();
+    if (erreurCompte) throw erreurCompte;
+    if (!compte) {
+        const err = new Error('Compte introuvable'); err.status = 404; throw err;
+    }
+    await supabase_1.supabaseAdmin.from('device_tokens').delete().eq('user_id', userId);
+    await supabase_1.supabaseAdmin.from('notifications').delete().eq('user_id', userId);
+    if (compte.role === 'etudiant') {
+        const { data: etudiant } = await supabase_1.supabaseAdmin
+            .from('etudiants').select('id').eq('user_id', userId).maybeSingle();
+        if (etudiant) await nettoyerDependancesEtudiant(etudiant.id);
+    }
+    else if (compte.role === 'entreprise') {
+        const { data: entreprise } = await supabase_1.supabaseAdmin
+            .from('entreprises').select('id').eq('user_id', userId).maybeSingle();
+        if (entreprise) await nettoyerDependancesEntreprise(entreprise.id);
     }
     const { data, error } = await supabase_1.supabaseAdmin.from('users').delete()
         .eq('id', userId).select('id').maybeSingle();

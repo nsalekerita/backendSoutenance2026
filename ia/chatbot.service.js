@@ -22,7 +22,7 @@ async function construireContexteProfil(etudiantId) {
             .eq('id', etudiantId)
             .single(),
         supabase_1.supabaseAdmin.from('etudiant_competences').select('competence_nom, niveau').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('etudiant_interets').select('interet_nom').eq('etudiant_id', etudiantId),
+        supabase_1.supabaseAdmin.from('etudiant_interets').select('domaine').eq('etudiant_id', etudiantId),
     ]);
     if (!etudiant)
         return '(profil introuvable)';
@@ -31,7 +31,7 @@ async function construireContexteProfil(etudiantId) {
         `Niveau: ${etudiant.niveau ?? 'non renseigné'}`,
         `Filière: ${etudiant.filiere ?? 'non renseignée'}${etudiant.specialite ? ` (${etudiant.specialite})` : ''}`,
         `Compétences: ${(competences ?? []).map((c) => `${c.competence_nom}${c.niveau ? ` (${c.niveau})` : ''}`).join(', ') || 'aucune renseignée'}`,
-        `Centres d'intérêt: ${(interets ?? []).map((i) => i.interet_nom).join(', ') || 'aucun renseigné'}`,
+        `Centres d'intérêt: ${(interets ?? []).map((i) => i.domaine).join(', ') || 'aucun renseigné'}`,
     ];
     return lignes.join('\n');
 }
