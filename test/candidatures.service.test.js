@@ -1,45 +1,28 @@
-process.env.SUPABASE_URL = 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
-
 const OFFRE = { id: 'offre-1', entreprise_id: 'entreprise-proprietaire' };
-const CANDIDATURE = { id: 'candidature-1', offre_id: 'offre-1', offres: { entreprise_id: 'entreprise-proprietaire' } };
+const CANDIDATURE_AVEC_OFFRE = { id: 'candidature-1', offre_id: 'offre-1', etudiant_id: 'etudiant-1', offres: { entreprise_id: 'entreprise-proprietaire', titre: 'Stage' } };
 
-jest.mock('../config/supabase', () => {
-  const supabaseAdmin = {
-    from: jest.fn((table) => {
-      if (table === 'offres') {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: OFFRE, error: null }),
-            }),
-          }),
-        };
-      }
-      if (table === 'candidatures') {
-        return {
-          select: (cols) => {
-            // getCandidatureAvecOffre joins offres(entreprise_id) ; candidaturesPourOffre liste juste
-            if (typeof cols === 'string' && cols.includes('offres(')) {
-              return {
-                eq: () => ({
-                  maybeSingle: async () => ({ data: CANDIDATURE, error: null }),
-                }),
-              };
-            }
-            return {
-              eq: () => ({
-                order: async () => ({ data: [], error: null }),
-              }),
-            };
-          },
-        };
-      }
-      throw new Error(`table non mockée: ${table}`);
-    }),
-  };
-  return { supabaseAdmin };
-});
+jest.mock('../config/database', () => ({
+  query: jest.fn((sql) => {
+    if (sql.includes('FROM offres') && !sql.includes('JOIN')) {
+      return Promise.resolve({ rows: [OFFRE] });
+    }
+    if (sql.includes('FROM candidatures c JOIN offres o') && sql.includes('WHERE c.id')) {
+      return Promise.resolve({ rows: [CANDIDATURE_AVEC_OFFRE] });
+    }
+    if (sql.includes('FROM candidatures c JOIN etudiants e')) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (sql.startsWith('UPDATE candidatures')) {
+      return Promise.resolve({ rows: [{ id: 'candidature-1', etudiant_id: 'etudiant-1', statut: 'acceptee' }] });
+    }
+    return Promise.resolve({ rows: [] });
+  }),
+}));
+
+jest.mock('../notifications/notifications.service', () => ({
+  notifierEtudiantDeCandidature: jest.fn(),
+  notifierEntrepriseDeOffre: jest.fn(),
+}));
 
 const { candidaturesPourOffre, accepter } = require('../candidatures/candidatures.service');
 

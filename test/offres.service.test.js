@@ -1,28 +1,21 @@
-process.env.SUPABASE_URL = 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+jest.mock('../config/database', () => ({
+  query: jest.fn((sql, params) => {
+    if (sql.startsWith('INSERT INTO offres')) {
+      // Les colonnes insérées suivent l'ordre : entreprise_id, statut, puis les champs de la liste blanche fournis.
+      const colonnesMatch = sql.match(/INSERT INTO offres \(([^)]+)\)/);
+      const colonnes = colonnesMatch[1].split(',').map((c) => c.trim());
+      const row = {};
+      colonnes.forEach((col, i) => { row[col] = params[i]; });
+      return Promise.resolve({ rows: [row] });
+    }
+    return Promise.resolve({ rows: [] });
+  }),
+}));
 
-jest.mock('../config/supabase', () => {
-  const insertedPayloads = [];
-  const supabaseAdmin = {
-    from: jest.fn((table) => ({
-      insert: jest.fn((payload) => {
-        insertedPayloads.push(payload);
-        return {
-          select: () => ({
-            single: async () => ({ data: payload, error: null }),
-          }),
-        };
-      }),
-      select: jest.fn(() => table === 'administrateurs'
-        ? Promise.resolve({ data: [], error: null })
-        : Promise.resolve({ data: [], error: null })),
-    })),
-    __insertedPayloads: insertedPayloads,
-  };
-  return { supabaseAdmin };
-});
+jest.mock('../notifications/notifications.service', () => ({
+  notifierAdminsNouvelleOffre: jest.fn(),
+}));
 
-const { supabaseAdmin } = require('../config/supabase');
 const { publierOffre } = require('../offres/offres.service');
 
 describe('offres.service publierOffre (protection mass-assignment)', () => {

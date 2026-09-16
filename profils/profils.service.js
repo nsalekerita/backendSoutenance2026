@@ -17,7 +17,8 @@ exports.confirmerNote = confirmerNote;
 exports.updateNote = updateNote;
 exports.deleteNote = deleteNote;
 exports.getRecommandations = getRecommandations;
-const supabase_1 = require("../config/supabase");
+const { query } = require("../config/database");
+const { storage } = require("../config/storage");
 
 /**
  * Colonnes réelles de la table "etudiants" chargées pour l'écran de profil.
@@ -33,21 +34,18 @@ const supabase_1 = require("../config/supabase");
  * deleteNote plus bas.
  */
 async function getProfilComplet(etudiantId) {
-    const [{ data: etudiant }, { data: competences }, { data: interets }, { data: wizard }, { data: notes }] = await Promise.all([
-        supabase_1.supabaseAdmin
-            .from('etudiants')
-            .select('id, nom, prenom, niveau, filiere, specialite, photo_url, cv_chemin, cv_nom_fichier')
-            .eq('id', etudiantId)
-            .single(),
-        supabase_1.supabaseAdmin.from('etudiant_competences').select('*').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('etudiant_interets').select('*').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('profils_wizard').select('*').eq('etudiant_id', etudiantId).maybeSingle(),
-        supabase_1.supabaseAdmin
-            .from('etudiant_notes')
-            .select('*')
-            .eq('etudiant_id', etudiantId)
-            .order('created_at', { ascending: false }),
+    const [{ rows: etudiantRows }, { rows: competences }, { rows: interets }, { rows: wizardRows }, { rows: notes }] = await Promise.all([
+        query(
+            `SELECT id, nom, prenom, niveau, filiere, specialite, photo_url, cv_chemin, cv_nom_fichier
+             FROM etudiants WHERE id = $1`,
+            [etudiantId]
+        ),
+        query('SELECT * FROM etudiant_competences WHERE etudiant_id = $1', [etudiantId]),
+        query('SELECT * FROM etudiant_interets WHERE etudiant_id = $1', [etudiantId]),
+        query('SELECT * FROM profils_wizard WHERE etudiant_id = $1', [etudiantId]),
+        query('SELECT * FROM etudiant_notes WHERE etudiant_id = $1 ORDER BY created_at DESC', [etudiantId]),
     ]);
+    const etudiant = etudiantRows[0] ?? null;
 
     const cv = etudiant?.cv_nom_fichier
         ? { nom_fichier: etudiant.cv_nom_fichier, chemin: etudiant.cv_chemin }
@@ -55,11 +53,11 @@ async function getProfilComplet(etudiantId) {
 
     return {
         etudiant,
-        competences: competences ?? [],
-        interets: interets ?? [],
-        wizard,
+        competences,
+        interets,
+        wizard: wizardRows[0] ?? null,
         cv,
-        notes: notes ?? [],
+        notes,
     };
 }
 
@@ -71,97 +69,80 @@ async function getProfilComplet(etudiantId) {
 const CHAMPS_MODIFIABLES = ['prenom', 'nom', 'filiere', 'specialite', 'niveau'];
 
 async function updateProfil(etudiantId, updates) {
-    const payload = {};
+    const colonnes = [];
+    const valeurs = [];
     for (const champ of CHAMPS_MODIFIABLES) {
         if (updates?.[champ] !== undefined) {
-            payload[champ] = updates[champ];
+            colonnes.push(champ);
+            valeurs.push(updates[champ]);
         }
     }
-
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiants')
-        .update(payload)
-        .eq('id', etudiantId)
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    valeurs.push(etudiantId);
+    const setSql = colonnes.map((c, i) => `${c} = $${i + 1}`).join(',');
+    const { rows } = await query(
+        `UPDATE etudiants SET ${setSql} WHERE id = $${valeurs.length} RETURNING *`,
+        valeurs
+    );
+    return rows[0];
 }
 
 async function addCompetence(etudiantId, competence_nom, niveau) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiant_competences')
-        .insert({ etudiant_id: etudiantId, competence_nom, niveau })
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    const { rows } = await query(
+        `INSERT INTO etudiant_competences (etudiant_id, competence_nom, niveau) VALUES ($1, $2, $3) RETURNING *`,
+        [etudiantId, competence_nom, niveau]
+    );
+    return rows[0];
 }
 
 async function addInteret(etudiantId, domaine) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiant_interets')
-        .insert({ etudiant_id: etudiantId, domaine })
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    const { rows } = await query(
+        `INSERT INTO etudiant_interets (etudiant_id, domaine) VALUES ($1, $2) RETURNING *`,
+        [etudiantId, domaine]
+    );
+    return rows[0];
 }
 
 /** Supprime une compétence, en s'assurant qu'elle appartient bien à l'étudiant authentifié. */
 async function deleteCompetence(etudiantId, competenceId) {
-    const { error } = await supabase_1.supabaseAdmin
-        .from('etudiant_competences')
-        .delete()
-        .eq('id', competenceId)
-        .eq('etudiant_id', etudiantId);
-    if (error)
-        throw error;
+    await query(
+        `DELETE FROM etudiant_competences WHERE id = $1 AND etudiant_id = $2`,
+        [competenceId, etudiantId]
+    );
     return { id: competenceId };
 }
 
 /** Supprime un centre d'intérêt, en s'assurant qu'il appartient bien à l'étudiant authentifié. */
 async function deleteInteret(etudiantId, interetId) {
-    const { error } = await supabase_1.supabaseAdmin
-        .from('etudiant_interets')
-        .delete()
-        .eq('id', interetId)
-        .eq('etudiant_id', etudiantId);
-    if (error)
-        throw error;
+    await query(
+        `DELETE FROM etudiant_interets WHERE id = $1 AND etudiant_id = $2`,
+        [interetId, etudiantId]
+    );
     return { id: interetId };
 }
 
 /** Enregistre une réponse d'étape du wizard d'orientation et avance etape_courante */
 async function enregistrerReponseWizard(etudiantId, etape, question_id, reponse) {
-    const { data: wizard, error: wizardError } = await supabase_1.supabaseAdmin
-        .from('profils_wizard')
-        .select('id, etape_courante')
-        .eq('etudiant_id', etudiantId)
-        .single();
-    if (wizardError)
-        throw wizardError;
-    await supabase_1.supabaseAdmin.from('wizard_reponses').insert({
-        profil_wizard_id: wizard.id,
-        etape,
-        question_id,
-        reponse,
-    });
+    const { rows: wizardRows } = await query(
+        `SELECT id, etape_courante FROM profils_wizard WHERE etudiant_id = $1`,
+        [etudiantId]
+    );
+    const wizard = wizardRows[0];
+    if (!wizard) {
+        const err = new Error('Wizard introuvable pour cet étudiant');
+        err.status = 404;
+        throw err;
+    }
+    await query(
+        `INSERT INTO wizard_reponses (profil_wizard_id, etape, question_id, reponse) VALUES ($1, $2, $3, $4)`,
+        [wizard.id, etape, question_id, JSON.stringify(reponse)]
+    );
     const etapeCourante = Math.max(wizard.etape_courante, etape + 1);
-    await supabase_1.supabaseAdmin.from('profils_wizard').update({ etape_courante: etapeCourante }).eq('id', wizard.id);
+    await query(`UPDATE profils_wizard SET etape_courante = $1 WHERE id = $2`, [etapeCourante, wizard.id]);
     return { etape_courante: etapeCourante };
 }
 
 async function terminerWizard(etudiantId) {
-    const { error } = await supabase_1.supabaseAdmin
-        .from('profils_wizard')
-        .update({ statut: 'termine' })
-        .eq('etudiant_id', etudiantId);
-    if (error)
-        throw error;
+    await query(`UPDATE profils_wizard SET statut = 'termine' WHERE etudiant_id = $1`, [etudiantId]);
 }
 
 /**
@@ -171,7 +152,7 @@ async function terminerWizard(etudiantId) {
  */
 async function getSignedCvUploadUrl(etudiantId, fileName) {
     const path = `${etudiantId}/${Date.now()}-${fileName}`;
-    const { data, error } = await supabase_1.supabaseAdmin.storage.from('cvs').createSignedUploadUrl(path);
+    const { data, error } = await storage.from('cvs').createSignedUploadUrl(path);
     if (error)
         throw error;
     return { upload_url: data.signedUrl, cle_fichier: path };
@@ -179,15 +160,11 @@ async function getSignedCvUploadUrl(etudiantId, fileName) {
 
 /** Rattache le CV uploadé au profil étudiant (appelé après l'upload effectif vers l'URL signée). */
 async function confirmerCv(etudiantId, cheminFichier, nomFichier) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiants')
-        .update({ cv_chemin: cheminFichier, cv_nom_fichier: nomFichier })
-        .eq('id', etudiantId)
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    const { rows } = await query(
+        `UPDATE etudiants SET cv_chemin = $1, cv_nom_fichier = $2 WHERE id = $3 RETURNING *`,
+        [cheminFichier, nomFichier, etudiantId]
+    );
+    return rows[0];
 }
 
 /**
@@ -195,7 +172,7 @@ async function confirmerCv(etudiantId, cheminFichier, nomFichier) {
  */
 async function getSignedPhotoUploadUrl(etudiantId, fileName) {
     const path = `${etudiantId}/${Date.now()}-${fileName}`;
-    const { data, error } = await supabase_1.supabaseAdmin.storage.from('photos').createSignedUploadUrl(path);
+    const { data, error } = await storage.from('photos').createSignedUploadUrl(path);
     if (error)
         throw error;
     return { upload_url: data.signedUrl, cle_fichier: path };
@@ -203,16 +180,12 @@ async function getSignedPhotoUploadUrl(etudiantId, fileName) {
 
 /** Rattache la photo uploadée au profil étudiant (appelé après l'upload effectif vers l'URL signée). */
 async function confirmerPhoto(etudiantId, cheminFichier) {
-    const { data: publicUrlData } = supabase_1.supabaseAdmin.storage.from('photos').getPublicUrl(cheminFichier);
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiants')
-        .update({ photo_url: publicUrlData.publicUrl })
-        .eq('id', etudiantId)
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    const { data: publicUrlData } = storage.from('photos').getPublicUrl(cheminFichier);
+    const { rows } = await query(
+        `UPDATE etudiants SET photo_url = $1 WHERE id = $2 RETURNING *`,
+        [publicUrlData.publicUrl, etudiantId]
+    );
+    return rows[0];
 }
 
 /**
@@ -223,7 +196,7 @@ async function confirmerPhoto(etudiantId, cheminFichier) {
  */
 async function getSignedNoteUploadUrl(etudiantId, fileName) {
     const path = `${etudiantId}/${Date.now()}-${fileName}`;
-    const { data, error } = await supabase_1.supabaseAdmin.storage.from('notes-bulletins').createSignedUploadUrl(path);
+    const { data, error } = await storage.from('notes-bulletins').createSignedUploadUrl(path);
     if (error)
         throw error;
     return { upload_url: data.signedUrl, cle_fichier: path };
@@ -231,21 +204,13 @@ async function getSignedNoteUploadUrl(etudiantId, fileName) {
 
 /** Crée une nouvelle note (image de bulletin) après upload effectif vers l'URL signée. */
 async function confirmerNote(etudiantId, cheminFichier, nomFichier, semestre) {
-    const { data: publicUrlData } = supabase_1.supabaseAdmin.storage.from('notes-bulletins').getPublicUrl(cheminFichier);
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiant_notes')
-        .insert({
-            etudiant_id: etudiantId,
-            chemin_fichier: cheminFichier,
-            nom_fichier: nomFichier ?? null,
-            url: publicUrlData.publicUrl,
-            semestre: semestre ?? null,
-        })
-        .select()
-        .single();
-    if (error)
-        throw error;
-    return data;
+    const { data: publicUrlData } = storage.from('notes-bulletins').getPublicUrl(cheminFichier);
+    const { rows } = await query(
+        `INSERT INTO etudiant_notes (etudiant_id, chemin_fichier, nom_fichier, url, semestre)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [etudiantId, cheminFichier, nomFichier ?? null, publicUrlData.publicUrl, semestre ?? null]
+    );
+    return rows[0];
 }
 
 /**
@@ -255,63 +220,60 @@ async function confirmerNote(etudiantId, cheminFichier, nomFichier, semestre) {
  * orphelins. Vérifie que la note appartient bien à l'étudiant authentifié.
  */
 async function updateNote(etudiantId, noteId, { cle_fichier, nom_fichier, semestre } = {}) {
-    const { data: existante, error: fetchError } = await supabase_1.supabaseAdmin
-        .from('etudiant_notes')
-        .select('chemin_fichier')
-        .eq('id', noteId)
-        .eq('etudiant_id', etudiantId)
-        .single();
-    if (fetchError)
-        throw fetchError;
+    const { rows: existanteRows } = await query(
+        `SELECT chemin_fichier FROM etudiant_notes WHERE id = $1 AND etudiant_id = $2`,
+        [noteId, etudiantId]
+    );
+    const existante = existanteRows[0];
+    if (!existante) {
+        const err = new Error('Note introuvable');
+        err.status = 404;
+        throw err;
+    }
 
-    const payload = {};
-    if (semestre !== undefined)
-        payload.semestre = semestre;
+    const colonnes = [];
+    const valeurs = [];
+    if (semestre !== undefined) {
+        colonnes.push('semestre');
+        valeurs.push(semestre);
+    }
 
     if (cle_fichier) {
-        const { data: publicUrlData } = supabase_1.supabaseAdmin.storage.from('notes-bulletins').getPublicUrl(cle_fichier);
-        payload.chemin_fichier = cle_fichier;
-        payload.nom_fichier = nom_fichier ?? null;
-        payload.url = publicUrlData.publicUrl;
+        const { data: publicUrlData } = storage.from('notes-bulletins').getPublicUrl(cle_fichier);
+        colonnes.push('chemin_fichier', 'nom_fichier', 'url');
+        valeurs.push(cle_fichier, nom_fichier ?? null, publicUrlData.publicUrl);
     }
 
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('etudiant_notes')
-        .update(payload)
-        .eq('id', noteId)
-        .eq('etudiant_id', etudiantId)
-        .select()
-        .single();
-    if (error)
-        throw error;
+    valeurs.push(noteId, etudiantId);
+    const setSql = colonnes.map((c, i) => `${c} = $${i + 1}`).join(',');
+    const { rows } = await query(
+        `UPDATE etudiant_notes SET ${setSql} WHERE id = $${valeurs.length - 1} AND etudiant_id = $${valeurs.length} RETURNING *`,
+        valeurs
+    );
 
-    if (cle_fichier && existante?.chemin_fichier) {
-        await supabase_1.supabaseAdmin.storage.from('notes-bulletins').remove([existante.chemin_fichier]);
+    if (cle_fichier && existante.chemin_fichier) {
+        await storage.from('notes-bulletins').remove([existante.chemin_fichier]);
     }
-    return data;
+    return rows[0];
 }
 
 /** Supprime une note (ligne + fichier associé dans le storage), en s'assurant qu'elle appartient bien à l'étudiant authentifié. */
 async function deleteNote(etudiantId, noteId) {
-    const { data: existante, error: fetchError } = await supabase_1.supabaseAdmin
-        .from('etudiant_notes')
-        .select('chemin_fichier')
-        .eq('id', noteId)
-        .eq('etudiant_id', etudiantId)
-        .single();
-    if (fetchError)
-        throw fetchError;
+    const { rows: existanteRows } = await query(
+        `SELECT chemin_fichier FROM etudiant_notes WHERE id = $1 AND etudiant_id = $2`,
+        [noteId, etudiantId]
+    );
+    const existante = existanteRows[0];
+    if (!existante) {
+        const err = new Error('Note introuvable');
+        err.status = 404;
+        throw err;
+    }
 
-    const { error } = await supabase_1.supabaseAdmin
-        .from('etudiant_notes')
-        .delete()
-        .eq('id', noteId)
-        .eq('etudiant_id', etudiantId);
-    if (error)
-        throw error;
+    await query(`DELETE FROM etudiant_notes WHERE id = $1 AND etudiant_id = $2`, [noteId, etudiantId]);
 
-    if (existante?.chemin_fichier) {
-        await supabase_1.supabaseAdmin.storage.from('notes-bulletins').remove([existante.chemin_fichier]);
+    if (existante.chemin_fichier) {
+        await storage.from('notes-bulletins').remove([existante.chemin_fichier]);
     }
     return { id: noteId };
 }
@@ -323,18 +285,16 @@ async function deleteNote(etudiantId, noteId) {
  * si ton schéma "offres" diffère.
  */
 async function getRecommandations(etudiantId) {
-    const [{ data: competences }, { data: interets }, { data: offres, error: offresError }] = await Promise.all([
-        supabase_1.supabaseAdmin.from('etudiant_competences').select('competence_nom').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('etudiant_interets').select('domaine').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('offres').select('*').eq('statut', 'validee'),
+    const [{ rows: competences }, { rows: interets }, { rows: offres }] = await Promise.all([
+        query('SELECT competence_nom FROM etudiant_competences WHERE etudiant_id = $1', [etudiantId]),
+        query('SELECT domaine FROM etudiant_interets WHERE etudiant_id = $1', [etudiantId]),
+        query(`SELECT * FROM offres WHERE statut = 'validee'`),
     ]);
-    if (offresError)
-        throw offresError;
 
-    const mesCompetences = (competences ?? []).map((c) => c.competence_nom.toLowerCase());
-    const mesInterets = (interets ?? []).map((i) => i.domaine.toLowerCase());
+    const mesCompetences = competences.map((c) => c.competence_nom.toLowerCase());
+    const mesInterets = interets.map((i) => i.domaine.toLowerCase());
 
-    const scored = (offres ?? []).map((offre) => {
+    const scored = offres.map((offre) => {
         const offreCompetences = Array.isArray(offre.competences_requises)
             ? offre.competences_requises.map((c) => String(c).toLowerCase())
             : [];

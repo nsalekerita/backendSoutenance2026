@@ -8,7 +8,7 @@ exports.renvoyerCodeInscription = renvoyerCodeInscription;
 exports.verifierCodeInscription = verifierCodeInscription;
 exports.demanderReinitialisationMotDePasse = demanderReinitialisationMotDePasse;
 exports.reinitialiserMotDePasse = reinitialiserMotDePasse;
-const supabase_1 = require("../config/supabase");
+const { query } = require("../config/database");
 const password_1 = require("../utils/password");
 const jwt_1 = require("../utils/jwt");
 const otp_1 = require("../utils/otp");
@@ -20,34 +20,29 @@ class HttpError extends Error {
         this.details = details;
     }
 }
+const TABLE_PROFIL_PAR_ROLE = { etudiant: 'etudiants', entreprise: 'entreprises', administrateur: 'administrateurs' };
 async function assertEmailAvailable(email) {
-    const { data } = await supabase_1.supabaseAdmin.from('users').select('id').eq('email', email).maybeSingle();
-    if (data)
-        throw new HttpError('Cette adresse e-mail est déjà utilisée', 409);
+    const { rows } = await query('SELECT id FROM users WHERE email = $1', [email]);
+    if (rows.length) throw new HttpError('Cette adresse e-mail est déjà utilisée', 409);
 }
 async function createBaseUser(email, password, role) {
     const password_hash = await (0, password_1.hashPassword)(password);
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('users')
-        .insert({ email, password_hash, role })
-        .select('id, email, role')
-        .single();
-    if (error)
-        throw new HttpError(error.message, 500);
-    return data;
+    const { rows } = await query(
+        `INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role`,
+        [email, password_hash, role]
+    );
+    return rows[0];
 }
 async function registerEtudiant(input) {
     await assertEmailAvailable(input.email);
     const user = await createBaseUser(input.email, input.password, 'etudiant');
-    const { data: etudiant, error } = await supabase_1.supabaseAdmin
-        .from('etudiants')
-        .insert({ user_id: user.id, nom: input.nom, prenom: input.prenom })
-        .select('id')
-        .single();
-    if (error)
-        throw new HttpError(error.message, 500);
+    const { rows } = await query(
+        `INSERT INTO etudiants (user_id, nom, prenom) VALUES ($1, $2, $3) RETURNING id`,
+        [user.id, input.nom, input.prenom]
+    );
+    const etudiant = rows[0];
     // Crée le suivi de wizard d'orientation (étape 0, en_cours)
-    await supabase_1.supabaseAdmin.from('profils_wizard').insert({ etudiant_id: etudiant.id });
+    await query(`INSERT INTO profils_wizard (etudiant_id) VALUES ($1)`, [etudiant.id]);
     await (0, otp_1.genererEtEnvoyerOtp)(user.email, 'inscription');
     return { requiresOtp: true, email: user.email };
 }
@@ -56,22 +51,19 @@ async function registerEntreprise(input) {
     const user = await createBaseUser(input.email, input.password, 'entreprise');
     // NB (cf. spec) : l'entreprise n'a PAS besoin de validation administrateur pour créer
     // un compte ; statut_verification reste indicatif pour un futur badge "vérifiée".
-    const { data: entreprise, error } = await supabase_1.supabaseAdmin
-        .from('entreprises')
-        .insert({ user_id: user.id, nom: input.nom, secteur: input.secteur ?? null, statut_verification: 'en_attente' })
-        .select('id')
-        .single();
-    if (error)
-        throw new HttpError(error.message, 500);
+    await query(
+        `INSERT INTO entreprises (user_id, nom, secteur, statut_verification) VALUES ($1, $2, $3, 'en_attente')`,
+        [user.id, input.nom, input.secteur ?? null]
+    );
     await (0, otp_1.genererEtEnvoyerOtp)(user.email, 'inscription');
     return { requiresOtp: true, email: user.email };
 }
 async function login(email, password) {
-    const { data: user } = await supabase_1.supabaseAdmin
-        .from('users')
-        .select('id, email, password_hash, role, actif, email_verifie')
-        .eq('email', email)
-        .maybeSingle();
+    const { rows } = await query(
+        `SELECT id, email, password_hash, role, actif, email_verifie FROM users WHERE email = $1`,
+        [email]
+    );
+    const user = rows[0];
     if (!user)
         throw new HttpError('E-mail ou mot de passe incorrect', 401);
     const valid = await (0, password_1.comparePassword)(password, user.password_hash);
@@ -85,9 +77,9 @@ async function login(email, password) {
     return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function resolveProfileId(userId, role) {
-    const table = role === 'etudiant' ? 'etudiants' : role === 'entreprise' ? 'entreprises' : 'administrateurs';
-    const { data } = await supabase_1.supabaseAdmin.from(table).select('id').eq('user_id', userId).maybeSingle();
-    return data?.id;
+    const table = TABLE_PROFIL_PAR_ROLE[role] ?? 'administrateurs';
+    const { rows } = await query(`SELECT id FROM ${table} WHERE user_id = $1`, [userId]);
+    return rows[0]?.id;
 }
 /**
  * Connexion / inscription via Google : à brancher sur Google OAuth côté Flutter
@@ -115,25 +107,26 @@ async function loginOrRegisterWithGoogle(googleIdToken, role) {
     const payload = ticket.getPayload();
     if (!payload?.email || !payload.email_verified)
         throw new HttpError('Compte Google non vérifié', 401);
-    let { data: user } = await supabase_1.supabaseAdmin.from('users')
-        .select('id, email, role, actif').eq('email', payload.email).maybeSingle();
+    let { rows } = await query(
+        `SELECT id, email, role, actif FROM users WHERE email = $1`,
+        [payload.email]
+    );
+    let user = rows[0];
     if (!user) {
         user = await createBaseUser(payload.email, require('crypto').randomBytes(32).toString('hex'), role);
-        await supabase_1.supabaseAdmin.from('users').update({ email_verifie: true }).eq('id', user.id);
+        await query(`UPDATE users SET email_verifie = true WHERE id = $1`, [user.id]);
         if (role === 'etudiant') {
             const names = String(payload.name ?? '').trim().split(/\s+/);
-            const { data: profil, error } = await supabase_1.supabaseAdmin.from('etudiants').insert({
-                user_id: user.id,
-                prenom: payload.given_name ?? names.shift() ?? 'Utilisateur',
-                nom: payload.family_name ?? names.join(' ') ?? '',
-            }).select('id').single();
-            if (error) throw error;
-            await supabase_1.supabaseAdmin.from('profils_wizard').insert({ etudiant_id: profil.id });
+            const { rows: profilRows } = await query(
+                `INSERT INTO etudiants (user_id, prenom, nom) VALUES ($1, $2, $3) RETURNING id`,
+                [user.id, payload.given_name ?? names.shift() ?? 'Utilisateur', payload.family_name ?? names.join(' ') ?? '']
+            );
+            await query(`INSERT INTO profils_wizard (etudiant_id) VALUES ($1)`, [profilRows[0].id]);
         } else {
-            const { error } = await supabase_1.supabaseAdmin.from('entreprises').insert({
-                user_id: user.id, nom: payload.name ?? payload.email, statut_verification: 'en_attente',
-            });
-            if (error) throw error;
+            await query(
+                `INSERT INTO entreprises (user_id, nom, statut_verification) VALUES ($1, $2, 'en_attente')`,
+                [user.id, payload.name ?? payload.email]
+            );
         }
     }
     if (user.actif === false) throw new HttpError('Ce compte a été désactivé', 403);
@@ -143,11 +136,8 @@ async function loginOrRegisterWithGoogle(googleIdToken, role) {
     return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function renvoyerCodeInscription(email) {
-    const { data: user } = await supabase_1.supabaseAdmin
-        .from('users')
-        .select('id, email_verifie')
-        .eq('email', email)
-        .maybeSingle();
+    const { rows } = await query(`SELECT id, email_verifie FROM users WHERE email = $1`, [email]);
+    const user = rows[0];
     if (!user)
         throw new HttpError('Aucun compte associé à cet e-mail', 404);
     if (user.email_verifie)
@@ -159,26 +149,19 @@ async function verifierCodeInscription(email, code) {
     const resultat = await (0, otp_1.verifierOtp)(email, code, 'inscription');
     if (!resultat.valide)
         throw new HttpError(resultat.raison, 400);
-    const { data: user, error } = await supabase_1.supabaseAdmin
-        .from('users')
-        .update({ email_verifie: true })
-        .eq('email', email)
-        .select('id, email, role')
-        .single();
-    if (error)
-        throw new HttpError(error.message, 500);
+    const { rows } = await query(
+        `UPDATE users SET email_verifie = true WHERE email = $1 RETURNING id, email, role`,
+        [email]
+    );
+    const user = rows[0];
     const role = user.role === 'admin' ? 'administrateur' : user.role;
     const profileId = await resolveProfileId(user.id, role);
     const authUser = { id: user.id, email: user.email, role, profileId };
     return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function demanderReinitialisationMotDePasse(email) {
-    const { data: user } = await supabase_1.supabaseAdmin
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-    if (user) {
+    const { rows } = await query(`SELECT id FROM users WHERE email = $1`, [email]);
+    if (rows.length) {
         await (0, otp_1.genererEtEnvoyerOtp)(email, 'reinitialisation');
     }
     return { message: 'Si un compte existe pour cet e-mail, un code de réinitialisation a été envoyé.' };
@@ -188,11 +171,6 @@ async function reinitialiserMotDePasse(email, code, nouveauMotDePasse) {
     if (!resultat.valide)
         throw new HttpError(resultat.raison, 400);
     const password_hash = await (0, password_1.hashPassword)(nouveauMotDePasse);
-    const { error } = await supabase_1.supabaseAdmin
-        .from('users')
-        .update({ password_hash })
-        .eq('email', email);
-    if (error)
-        throw new HttpError(error.message, 500);
+    await query(`UPDATE users SET password_hash = $1 WHERE email = $2`, [password_hash, email]);
     return { message: 'Mot de passe réinitialisé avec succès.' };
 }

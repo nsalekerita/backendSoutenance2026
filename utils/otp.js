@@ -4,7 +4,7 @@ exports.verifierOtp = verifierOtp;
 
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
-const { supabaseAdmin } = require("../config/supabase");
+const { query } = require("../config/database");
 const { envoyerEmail } = require("./mailer");
 
 const DUREE_VALIDITE_MINUTES = 10;
@@ -21,15 +21,15 @@ async function genererEtEnvoyerOtp(email, purpose) {
     const code_hash = await bcrypt.hash(code, 10);
     const expires_at = new Date(Date.now() + DUREE_VALIDITE_MINUTES * 60 * 1000).toISOString();
 
-    await supabaseAdmin
-        .from('otp_codes')
-        .update({ consumed_at: new Date().toISOString() })
-        .eq('email', email)
-        .eq('purpose', purpose)
-        .is('consumed_at', null);
+    await query(
+        `UPDATE otp_codes SET consumed_at = now() WHERE email = $1 AND purpose = $2 AND consumed_at IS NULL`,
+        [email, purpose]
+    );
 
-    const { error } = await supabaseAdmin.from('otp_codes').insert({ email, code_hash, purpose, expires_at });
-    if (error) throw new Error(error.message);
+    await query(
+        `INSERT INTO otp_codes (email, code_hash, purpose, expires_at) VALUES ($1, $2, $3, $4)`,
+        [email, code_hash, purpose, expires_at]
+    );
 
     const sujet = purpose === 'inscription' ? 'Vérifiez votre adresse e-mail' : 'Réinitialisation de votre mot de passe';
     await envoyerEmail({
@@ -47,15 +47,12 @@ async function genererEtEnvoyerOtp(email, purpose) {
 /** Vérifie le dernier code non consommé pour (email, purpose) et le marque
  * consommé s'il est valide. Incrémente le compteur de tentatives sinon. */
 async function verifierOtp(email, code, purpose) {
-    const { data: otp } = await supabaseAdmin
-        .from('otp_codes')
-        .select('*')
-        .eq('email', email)
-        .eq('purpose', purpose)
-        .is('consumed_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { rows } = await query(
+        `SELECT * FROM otp_codes WHERE email = $1 AND purpose = $2 AND consumed_at IS NULL
+         ORDER BY created_at DESC LIMIT 1`,
+        [email, purpose]
+    );
+    const otp = rows[0] ?? null;
 
     if (!otp) return { valide: false, raison: 'Aucun code en attente. Demandez un nouveau code.' };
     if (new Date(otp.expires_at) < new Date()) {
@@ -67,10 +64,10 @@ async function verifierOtp(email, code, purpose) {
 
     const correspond = await bcrypt.compare(code, otp.code_hash);
     if (!correspond) {
-        await supabaseAdmin.from('otp_codes').update({ tentatives: otp.tentatives + 1 }).eq('id', otp.id);
+        await query(`UPDATE otp_codes SET tentatives = $1 WHERE id = $2`, [otp.tentatives + 1, otp.id]);
         return { valide: false, raison: 'Code incorrect.' };
     }
 
-    await supabaseAdmin.from('otp_codes').update({ consumed_at: new Date().toISOString() }).eq('id', otp.id);
+    await query(`UPDATE otp_codes SET consumed_at = now() WHERE id = $1`, [otp.id]);
     return { valide: true };
 }

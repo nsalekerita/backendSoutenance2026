@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.calculerScoresFilieres = calculerScoresFilieres;
-const supabase_1 = require("../config/supabase");
+const { query } = require("../config/database");
 const NIVEAU_POIDS = { debutant: 1, intermediaire: 2, avance: 3 };
 /**
  * Moteur de scoring PUR (aucun appel IA ici, cf. découpage backend fourni :
@@ -10,11 +10,18 @@ const NIVEAU_POIDS = { debutant: 1, intermediaire: 2, avance: 3 };
  * critères pondérés définis dans filiere_criteres (competence / interet / matiere).
  */
 async function calculerScoresFilieres(etudiantId) {
-    const [{ data: signaux }, { data: filieres }] = await Promise.all([
+    const [signaux, { rows: filiereRows }] = await Promise.all([
         getSignauxEtudiant(etudiantId),
-        supabase_1.supabaseAdmin.from('filieres').select('id, nom, filiere_criteres(id, type, nom, poids)'),
+        query('SELECT id, nom FROM filieres'),
     ]);
-    const scores = (filieres ?? []).map((filiere) => {
+    for (const filiere of filiereRows) {
+        const { rows: criteres } = await query(
+            'SELECT id, type, nom, poids FROM filiere_criteres WHERE filiere_id = $1',
+            [filiere.id]
+        );
+        filiere.filiere_criteres = criteres;
+    }
+    const scores = filiereRows.map((filiere) => {
         let score = 0;
         let poidsTotal = 0;
         for (const critere of filiere.filiere_criteres ?? []) {
@@ -37,9 +44,9 @@ async function calculerScoresFilieres(etudiantId) {
     return scores.sort((a, b) => b.score - a.score);
 }
 async function getSignauxEtudiant(etudiantId) {
-    const [{ data: competences }, { data: interets }] = await Promise.all([
-        supabase_1.supabaseAdmin.from('etudiant_competences').select('competence_nom, niveau').eq('etudiant_id', etudiantId),
-        supabase_1.supabaseAdmin.from('etudiant_interets').select('domaine').eq('etudiant_id', etudiantId),
+    const [{ rows: competences }, { rows: interets }] = await Promise.all([
+        query('SELECT competence_nom, niveau FROM etudiant_competences WHERE etudiant_id = $1', [etudiantId]),
+        query('SELECT domaine FROM etudiant_interets WHERE etudiant_id = $1', [etudiantId]),
     ]);
-    return { data: { competences: competences ?? [], interets: interets ?? [] } };
+    return { competences, interets };
 }

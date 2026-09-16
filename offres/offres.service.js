@@ -6,7 +6,7 @@ exports.getOffre = getOffre;
 exports.listerOffresEntreprise = listerOffresEntreprise;
 exports.matchingEtudiants = matchingEtudiants;
 exports.supprimerOffre = supprimerOffre;
-const supabase_1 = require("../config/supabase");
+const { query } = require("../config/database");
 const notifications_1 = require("../notifications/notifications.service");
 /** Liste blanche des champs acceptés à la création d'une offre : évite le mass-assignment. */
 const CHAMPS_OFFRE_AUTORISES = [
@@ -18,20 +18,25 @@ const CHAMPS_OFFRE_AUTORISES = [
     'localisation',
     'date_limite',
 ];
+function dbValue(champ, valeur) {
+    if (champ === 'competences_requises' && valeur !== null && valeur !== undefined) return JSON.stringify(valeur);
+    return valeur;
+}
 async function publierOffre(entrepriseId, input) {
-    const payload = {};
+    const colonnes = ['entreprise_id', 'statut'];
+    const valeurs = [entrepriseId, 'en_attente'];
     for (const champ of CHAMPS_OFFRE_AUTORISES) {
         if (input?.[champ] !== undefined) {
-            payload[champ] = input[champ];
+            colonnes.push(champ);
+            valeurs.push(dbValue(champ, input[champ]));
         }
     }
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('offres')
-        .insert({ ...payload, entreprise_id: entrepriseId, statut: 'en_attente' })
-        .select()
-        .single();
-    if (error)
-        throw error;
+    const placeholders = valeurs.map((_, i) => `$${i + 1}`).join(',');
+    const { rows } = await query(
+        `INSERT INTO offres (${colonnes.join(',')}) VALUES (${placeholders}) RETURNING *`,
+        valeurs
+    );
+    const data = rows[0];
     await notifications_1.notifierAdminsNouvelleOffre({
         titre: 'Nouvelle offre à valider',
         corps: `Une nouvelle offre "${data.titre}" attend votre validation.`,
@@ -40,42 +45,48 @@ async function publierOffre(entrepriseId, input) {
     });
     return data;
 }
+async function attacherEntreprise(offres) {
+    for (const offre of offres) {
+        const { rows } = await query('SELECT nom, secteur FROM entreprises WHERE id = $1', [offre.entreprise_id]);
+        offre.entreprises = rows[0] ?? null;
+    }
+    return offres;
+}
 /** Liste publique (étudiants) : uniquement les offres validées */
 async function listerOffresValidees(filters) {
-    let query = supabase_1.supabaseAdmin.from('offres').select('*, entreprises(nom, secteur)').eq('statut', 'validee');
-    if (filters.type)
-        query = query.eq('type', filters.type);
-    if (filters.filiereId)
-        query = query.contains('filieres_ciblees', [filters.filiereId]);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error)
-        throw error;
-    return data ?? [];
+    const params = ['validee'];
+    let sql = `SELECT * FROM offres WHERE statut = $1`;
+    if (filters.type) {
+        params.push(filters.type);
+        sql += ` AND type = $${params.length}`;
+    }
+    if (filters.filiereId) {
+        params.push([filters.filiereId]);
+        sql += ` AND filieres_ciblees @> $${params.length}::uuid[]`;
+    }
+    sql += ' ORDER BY created_at DESC';
+    const { rows } = await query(sql, params);
+    return attacherEntreprise(rows);
 }
 async function getOffre(id) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('offres')
-        .select('*, entreprises(nom, secteur)')
-        .eq('id', id)
-        .maybeSingle();
-    if (error)
-        throw error;
-    return data;
+    const { rows } = await query('SELECT * FROM offres WHERE id = $1', [id]);
+    if (!rows[0]) return null;
+    const [offre] = await attacherEntreprise(rows);
+    return offre;
 }
 async function listerOffresEntreprise(entrepriseId) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('offres')
-        .select('*')
-        .eq('entreprise_id', entrepriseId)
-        .order('created_at', { ascending: false });
-    if (error)
-        throw error;
-    return data ?? [];
+    const { rows } = await query(
+        `SELECT * FROM offres WHERE entreprise_id = $1 ORDER BY created_at DESC`,
+        [entrepriseId]
+    );
+    return rows;
 }
 async function supprimerOffre(offreId, entrepriseId) {
-    const { data, error } = await supabase_1.supabaseAdmin.from('offres').delete()
-        .eq('id', offreId).eq('entreprise_id', entrepriseId).select('id').maybeSingle();
-    if (error) throw error;
+    const { rows } = await query(
+        `DELETE FROM offres WHERE id = $1 AND entreprise_id = $2 RETURNING id`,
+        [offreId, entrepriseId]
+    );
+    const data = rows[0];
     if (!data) {
         const err = new Error('Offre introuvable ou non autorisée');
         err.status = 404;
@@ -101,14 +112,21 @@ async function matchingEtudiants(offreId, entrepriseId) {
     const competencesRequises = Array.isArray(offre.competences_requises)
         ? offre.competences_requises
         : [];
-    let query = supabase_1.supabaseAdmin.from('etudiants').select('id, nom, prenom, filiere_actuelle_id, etudiant_competences(competence_nom)');
+    const params = [];
+    let sql = 'SELECT id, nom, prenom, filiere_actuelle_id FROM etudiants';
     if (offre.filieres_ciblees?.length) {
-        query = query.in('filiere_actuelle_id', offre.filieres_ciblees);
+        params.push(offre.filieres_ciblees);
+        sql += ` WHERE filiere_actuelle_id = ANY($${params.length}::uuid[])`;
     }
-    const { data: etudiants, error } = await query;
-    if (error)
-        throw error;
-    return (etudiants ?? [])
+    const { rows: etudiants } = await query(sql, params);
+    for (const e of etudiants) {
+        const { rows: competences } = await query(
+            'SELECT competence_nom FROM etudiant_competences WHERE etudiant_id = $1',
+            [e.id]
+        );
+        e.etudiant_competences = competences;
+    }
+    return etudiants
         .map((e) => {
         const comps = (e.etudiant_competences ?? []).map((c) => c.competence_nom.toLowerCase());
         const matches = competencesRequises.filter((c) => comps.includes(c.toLowerCase()));

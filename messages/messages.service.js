@@ -1,5 +1,4 @@
 "use strict";
-const { supabaseAdmin } = require('../config/supabase');
 const { query } = require('../config/database');
 
 async function assertRelation(entrepriseId, etudiantId) {
@@ -10,32 +9,34 @@ async function assertRelation(entrepriseId, etudiantId) {
 
 async function getOrCreateConversation(entrepriseId, etudiantId) {
   await assertRelation(entrepriseId, etudiantId);
-  let { data, error } = await supabaseAdmin.from('entreprise_conversations').select('id')
-    .eq('entreprise_id', entrepriseId).eq('etudiant_id', etudiantId).maybeSingle();
-  if (error) throw error;
-  if (!data) {
-    const result = await supabaseAdmin.from('entreprise_conversations')
-      .insert({ entreprise_id: entrepriseId, etudiant_id: etudiantId }).select('id').single();
-    if (result.error) throw result.error;
-    data = result.data;
-  }
-  return data.id;
+  const { rows } = await query(
+    `SELECT id FROM entreprise_conversations WHERE entreprise_id = $1 AND etudiant_id = $2`,
+    [entrepriseId, etudiantId]
+  );
+  if (rows[0]) return rows[0].id;
+  const { rows: created } = await query(
+    `INSERT INTO entreprise_conversations (entreprise_id, etudiant_id) VALUES ($1, $2) RETURNING id`,
+    [entrepriseId, etudiantId]
+  );
+  return created[0].id;
 }
 
 async function historique(entrepriseId, etudiantId) {
   const conversationId = await getOrCreateConversation(entrepriseId, etudiantId);
-  const { data, error } = await supabaseAdmin.from('entreprise_messages').select('*')
-    .eq('conversation_id', conversationId).order('created_at', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((m) => ({ ...m, is_mine: m.expediteur_type === 'entreprise' }));
+  const { rows } = await query(
+    `SELECT * FROM entreprise_messages WHERE conversation_id = $1 ORDER BY created_at ASC`,
+    [conversationId]
+  );
+  return rows.map((m) => ({ ...m, is_mine: m.expediteur_type === 'entreprise' }));
 }
 
 async function envoyer(entrepriseId, etudiantId, contenu) {
   const conversationId = await getOrCreateConversation(entrepriseId, etudiantId);
-  const { data, error } = await supabaseAdmin.from('entreprise_messages').insert({
-    conversation_id: conversationId, expediteur_type: 'entreprise', expediteur_id: entrepriseId, contenu,
-  }).select().single();
-  if (error) throw error;
-  return data;
+  const { rows } = await query(
+    `INSERT INTO entreprise_messages (conversation_id, expediteur_type, expediteur_id, contenu)
+     VALUES ($1, 'entreprise', $2, $3) RETURNING *`,
+    [conversationId, entrepriseId, contenu]
+  );
+  return rows[0];
 }
 module.exports = { historique, envoyer };

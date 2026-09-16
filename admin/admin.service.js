@@ -8,46 +8,51 @@ exports.listerOffresPourAdmin = listerOffresPourAdmin;
 exports.changerStatutOffre = changerStatutOffre;
 exports.validerEntreprise = validerEntreprise;
 exports.supprimerCompte = supprimerCompte;
-const supabase_1 = require("../config/supabase");
+const { query } = require("../config/database");
 const notifications_1 = require("../notifications/notifications.service");
+
+async function compter(table) {
+    const { rows } = await query(`SELECT count(*)::int AS count FROM ${table}`);
+    return rows[0].count;
+}
+
 async function statistiquesGlobales() {
-    const [{ count: nbEtudiants }, { count: nbEntreprises }, { count: nbOffres }, { count: nbCandidatures }] = await Promise.all([
-        supabase_1.supabaseAdmin.from('etudiants').select('*', { count: 'exact', head: true }),
-        supabase_1.supabaseAdmin.from('entreprises').select('*', { count: 'exact', head: true }),
-        supabase_1.supabaseAdmin.from('offres').select('*', { count: 'exact', head: true }),
-        supabase_1.supabaseAdmin.from('candidatures').select('*', { count: 'exact', head: true }),
+    const [nbEtudiants, nbEntreprises, nbOffres, nbCandidatures] = await Promise.all([
+        compter('etudiants'),
+        compter('entreprises'),
+        compter('offres'),
+        compter('candidatures'),
     ]);
-    const { data: offresParStatut } = await supabase_1.supabaseAdmin.from('offres').select('statut');
-    const repartitionStatuts = (offresParStatut ?? []).reduce((acc, o) => {
+    const { rows: offresParStatut } = await query('SELECT statut FROM offres');
+    const repartitionStatuts = offresParStatut.reduce((acc, o) => {
         acc[o.statut] = (acc[o.statut] ?? 0) + 1;
         return acc;
     }, {});
     return {
-        nbEtudiants: nbEtudiants ?? 0,
-        nbEntreprises: nbEntreprises ?? 0,
-        nbOffres: nbOffres ?? 0,
-        nbCandidatures: nbCandidatures ?? 0,
+        nbEtudiants,
+        nbEntreprises,
+        nbOffres,
+        nbCandidatures,
         repartitionStatutsOffres: repartitionStatuts,
     };
 }
 async function listerComptes(role) {
-    let query = supabase_1.supabaseAdmin.from('users').select('id, email, role, actif, created_at');
-    if (role)
-        query = query.eq('role', role);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error)
-        throw error;
-    return data ?? [];
+    const params = [];
+    let sql = 'SELECT id, email, role, actif, created_at FROM users';
+    if (role) {
+        params.push(role);
+        sql += ` WHERE role = $${params.length}`;
+    }
+    sql += ' ORDER BY created_at DESC';
+    const { rows } = await query(sql, params);
+    return rows;
 }
 async function setCompteActif(userId, actif) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('users')
-        .update({ actif })
-        .eq('id', userId)
-        .select('id, email, role, actif')
-        .maybeSingle();
-    if (error)
-        throw error;
+    const { rows } = await query(
+        `UPDATE users SET actif = $1 WHERE id = $2 RETURNING id, email, role, actif`,
+        [actif, userId]
+    );
+    const data = rows[0];
     if (!data) {
         const err = new Error('Compte introuvable');
         err.status = 404;
@@ -67,22 +72,26 @@ async function supprimerCompte(userId, adminUserId) {
         err.status = 409;
         throw err;
     }
-    const { data, error } = await supabase_1.supabaseAdmin.from('users').delete()
-        .eq('id', userId).select('id').maybeSingle();
-    if (error) throw error;
+    // Les contraintes "on delete cascade" du schéma nettoient automatiquement
+    // etudiants/entreprises/administrateurs et toutes leurs dépendances.
+    const { rows } = await query(`DELETE FROM users WHERE id = $1 RETURNING id`, [userId]);
+    const data = rows[0];
     if (!data) {
         const err = new Error('Compte introuvable'); err.status = 404; throw err;
     }
     return data;
 }
 async function listerOffresPourAdmin(statut) {
-    let query = supabase_1.supabaseAdmin.from('offres').select('*, entreprises(nom)');
-    if (statut)
-        query = query.eq('statut', statut);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error)
-        throw error;
-    return data ?? [];
+    const params = [];
+    let sql = `SELECT o.*, json_build_object('nom', e.nom) AS entreprises
+               FROM offres o JOIN entreprises e ON e.id = o.entreprise_id`;
+    if (statut) {
+        params.push(statut);
+        sql += ` WHERE o.statut = $${params.length}`;
+    }
+    sql += ' ORDER BY o.created_at DESC';
+    const { rows } = await query(sql, params);
+    return rows;
 }
 const LIBELLES_STATUT_OFFRE = {
     validee: 'a été validée et est désormais visible par les étudiants',
@@ -90,16 +99,19 @@ const LIBELLES_STATUT_OFFRE = {
     cloturee: 'a été clôturée',
 };
 async function changerStatutOffre(offreId, statut) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('offres')
-        .update({ statut })
-        .eq('id', offreId)
-        .select('*, entreprises(id)')
-        .single();
-    if (error)
-        throw error;
-    if (data.entreprises) {
-        await notifications_1.notifierEntrepriseDeOffre(data.entreprises.id, {
+    const { rows } = await query(
+        `UPDATE offres SET statut = $1 WHERE id = $2 RETURNING *`,
+        [statut, offreId]
+    );
+    const data = rows[0];
+    if (!data) {
+        const err = new Error('Offre introuvable');
+        err.status = 404;
+        throw err;
+    }
+    const { rows: entrepriseRows } = await query('SELECT id FROM entreprises WHERE id = $1', [data.entreprise_id]);
+    if (entrepriseRows[0]) {
+        await notifications_1.notifierEntrepriseDeOffre(entrepriseRows[0].id, {
             titre: 'Statut de votre offre mis à jour',
             corps: `Votre offre "${data.titre}" ${LIBELLES_STATUT_OFFRE[statut] ?? `est passée au statut "${statut}"`}.`,
             type: 'offre_statut',
@@ -109,13 +121,15 @@ async function changerStatutOffre(offreId, statut) {
     return data;
 }
 async function validerEntreprise(entrepriseId) {
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('entreprises')
-        .update({ statut_verification: 'validee' })
-        .eq('id', entrepriseId)
-        .select()
-        .single();
-    if (error)
-        throw error;
+    const { rows } = await query(
+        `UPDATE entreprises SET statut_verification = 'validee' WHERE id = $1 RETURNING *`,
+        [entrepriseId]
+    );
+    const data = rows[0];
+    if (!data) {
+        const err = new Error('Entreprise introuvable');
+        err.status = 404;
+        throw err;
+    }
     return data;
 }

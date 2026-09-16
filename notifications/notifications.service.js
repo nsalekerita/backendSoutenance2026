@@ -9,43 +9,37 @@ exports.notifierEntrepriseDeOffre = notifierEntrepriseDeOffre;
 exports.notifierEtudiantDeCandidature = notifierEtudiantDeCandidature;
 exports.notifierAdminsNouvelleOffre = notifierAdminsNouvelleOffre;
 
-const { supabaseAdmin } = require("../config/supabase");
+const { query } = require("../config/database");
 const { getMessaging } = require("../config/firebase");
 
 async function enregistrerToken(userId, token, plateforme) {
-    const { error } = await supabaseAdmin
-        .from('device_tokens')
-        .upsert({ user_id: userId, token, plateforme, last_used_at: new Date().toISOString() }, { onConflict: 'user_id,token' });
-    if (error) throw error;
+    await query(
+        `INSERT INTO device_tokens (user_id, token, plateforme, last_used_at) VALUES ($1, $2, $3, now())
+         ON CONFLICT (user_id, token) DO UPDATE SET plateforme = EXCLUDED.plateforme, last_used_at = EXCLUDED.last_used_at`,
+        [userId, token, plateforme]
+    );
     return { message: 'Token enregistré.' };
 }
 
 async function supprimerToken(userId, token) {
-    await supabaseAdmin.from('device_tokens').delete().eq('user_id', userId).eq('token', token);
+    await query(`DELETE FROM device_tokens WHERE user_id = $1 AND token = $2`, [userId, token]);
     return { message: 'Token supprimé.' };
 }
 
 async function mesNotifications(userId) {
-    const { data, error } = await supabaseAdmin
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-    if (error) throw error;
-    return data ?? [];
+    const { rows } = await query(
+        `SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+        [userId]
+    );
+    return rows;
 }
 
 async function marquerLue(userId, notificationId) {
-    const { data, error } = await supabaseAdmin
-        .from('notifications')
-        .update({ lue: true })
-        .eq('id', notificationId)
-        .eq('user_id', userId)
-        .select()
-        .maybeSingle();
-    if (error) throw error;
-    return data;
+    const { rows } = await query(
+        `UPDATE notifications SET lue = true WHERE id = $1 AND user_id = $2 RETURNING *`,
+        [notificationId, userId]
+    );
+    return rows[0] ?? null;
 }
 
 /** Retire de device_tokens les tokens que FCM signale comme invalides/expirés
@@ -56,7 +50,7 @@ async function purgerTokensInvalides(tokens, reponses) {
         .filter(({ r }) => r.error?.code === 'messaging/registration-token-not-registered' || r.error?.code === 'messaging/invalid-registration-token')
         .map(({ token }) => token);
     if (tokensInvalides.length) {
-        await supabaseAdmin.from('device_tokens').delete().in('token', tokensInvalides);
+        await query(`DELETE FROM device_tokens WHERE token = ANY($1)`, [tokensInvalides]);
     }
 }
 
@@ -65,13 +59,16 @@ async function purgerTokensInvalides(tokens, reponses) {
  * jamais d'erreur si Firebase n'est pas configuré ou si l'envoi échoue :
  * la notification reste consultable dans l'app même sans push. */
 async function envoyerNotification(userId, { titre, corps, type, data }) {
-    await supabaseAdmin.from('notifications').insert({ user_id: userId, titre, corps, type, data: data ?? null });
+    await query(
+        `INSERT INTO notifications (user_id, titre, corps, type, data) VALUES ($1, $2, $3, $4, $5)`,
+        [userId, titre, corps, type, data ? JSON.stringify(data) : null]
+    );
 
     const messaging = getMessaging();
     if (!messaging) return;
 
-    const { data: appareils } = await supabaseAdmin.from('device_tokens').select('token').eq('user_id', userId);
-    const tokens = (appareils ?? []).map((a) => a.token);
+    const { rows: appareils } = await query(`SELECT token FROM device_tokens WHERE user_id = $1`, [userId]);
+    const tokens = appareils.map((a) => a.token);
     if (!tokens.length) return;
 
     try {
@@ -87,18 +84,18 @@ async function envoyerNotification(userId, { titre, corps, type, data }) {
 }
 
 async function userIdFromEtudiant(etudiantId) {
-    const { data } = await supabaseAdmin.from('etudiants').select('user_id').eq('id', etudiantId).maybeSingle();
-    return data?.user_id ?? null;
+    const { rows } = await query(`SELECT user_id FROM etudiants WHERE id = $1`, [etudiantId]);
+    return rows[0]?.user_id ?? null;
 }
 
 async function userIdFromEntreprise(entrepriseId) {
-    const { data } = await supabaseAdmin.from('entreprises').select('user_id').eq('id', entrepriseId).maybeSingle();
-    return data?.user_id ?? null;
+    const { rows } = await query(`SELECT user_id FROM entreprises WHERE id = $1`, [entrepriseId]);
+    return rows[0]?.user_id ?? null;
 }
 
 async function tousLesAdminUserIds() {
-    const { data } = await supabaseAdmin.from('administrateurs').select('user_id');
-    return (data ?? []).map((a) => a.user_id);
+    const { rows } = await query(`SELECT user_id FROM administrateurs`);
+    return rows.map((a) => a.user_id);
 }
 
 /** Nouvelle candidature reçue sur une offre : notifie l'entreprise propriétaire. */
