@@ -12,6 +12,7 @@ const supabase_1 = require("../config/supabase");
 const password_1 = require("../utils/password");
 const jwt_1 = require("../utils/jwt");
 const otp_1 = require("../utils/otp");
+const { OAuth2Client } = require("google-auth-library");
 class HttpError extends Error {
     constructor(message, status = 400, details) {
         super(message);
@@ -78,9 +79,6 @@ async function login(email, password) {
         throw new HttpError('E-mail ou mot de passe incorrect', 401);
     if (user.actif === false)
         throw new HttpError('Ce compte a été désactivé', 403);
-    if (user.email_verifie === false) {
-        throw new HttpError('Veuillez vérifier votre adresse e-mail avant de vous connecter.', 403, { requiresOtp: true, email: user.email });
-    }
     const role = user.role === 'admin' ? 'administrateur' : user.role;
     const profileId = await resolveProfileId(user.id, role);
     const authUser = { id: user.id, email: user.email, role, profileId };
@@ -98,8 +96,51 @@ async function resolveProfileId(userId, role) {
  * Squelette fourni ; l'implémentation de la vérification du id_token Google
  * dépend du package choisi côté client (google_sign_in / googleapis côté back).
  */
-async function loginOrRegisterWithGoogle(_googleIdToken, role) {
-    throw new HttpError(`Connexion Google non configurée (role demandé: ${role}). Voir README.`, 501);
+async function loginOrRegisterWithGoogle(googleIdToken, role) {
+    const { env } = require('../config/env');
+    if (!env.googleClientId)
+        throw new HttpError('Connexion Google non configurée', 503);
+    if (!['etudiant', 'entreprise'].includes(role))
+        throw new HttpError('Rôle Google invalide', 422);
+    let ticket;
+    try {
+        ticket = await new OAuth2Client(env.googleClientId).verifyIdToken({
+            idToken: googleIdToken,
+            audience: env.googleClientId,
+        });
+    }
+    catch {
+        throw new HttpError('Jeton Google invalide ou expiré', 401);
+    }
+    const payload = ticket.getPayload();
+    if (!payload?.email || !payload.email_verified)
+        throw new HttpError('Compte Google non vérifié', 401);
+    let { data: user } = await supabase_1.supabaseAdmin.from('users')
+        .select('id, email, role, actif').eq('email', payload.email).maybeSingle();
+    if (!user) {
+        user = await createBaseUser(payload.email, require('crypto').randomBytes(32).toString('hex'), role);
+        await supabase_1.supabaseAdmin.from('users').update({ email_verifie: true }).eq('id', user.id);
+        if (role === 'etudiant') {
+            const names = String(payload.name ?? '').trim().split(/\s+/);
+            const { data: profil, error } = await supabase_1.supabaseAdmin.from('etudiants').insert({
+                user_id: user.id,
+                prenom: payload.given_name ?? names.shift() ?? 'Utilisateur',
+                nom: payload.family_name ?? names.join(' ') ?? '',
+            }).select('id').single();
+            if (error) throw error;
+            await supabase_1.supabaseAdmin.from('profils_wizard').insert({ etudiant_id: profil.id });
+        } else {
+            const { error } = await supabase_1.supabaseAdmin.from('entreprises').insert({
+                user_id: user.id, nom: payload.name ?? payload.email, statut_verification: 'en_attente',
+            });
+            if (error) throw error;
+        }
+    }
+    if (user.actif === false) throw new HttpError('Ce compte a été désactivé', 403);
+    const normalizedRole = user.role === 'admin' ? 'administrateur' : user.role;
+    const profileId = await resolveProfileId(user.id, normalizedRole);
+    const authUser = { id: user.id, email: user.email, role: normalizedRole, profileId };
+    return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function renvoyerCodeInscription(email) {
     const { data: user } = await supabase_1.supabaseAdmin

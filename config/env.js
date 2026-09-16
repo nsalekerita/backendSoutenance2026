@@ -6,16 +6,23 @@ function optional(name, fallback = '') {
         console.warn(`[env] Variable manquante: ${name}`);
     return value;
 }
+function requiredInProduction(name, fallback = '') {
+    const value = process.env[name] ?? fallback;
+    if ((process.env.NODE_ENV ?? 'development') === 'production' && !value) {
+        throw new Error(`[env] Variable obligatoire en production: ${name}`);
+    }
+    return value;
+}
 exports.env = {
     port: Number(process.env.PORT ?? 4000),
     nodeEnv: process.env.NODE_ENV ?? 'development',
-    supabaseUrl: optional('SUPABASE_URL'),
-    supabaseServiceRoleKey: optional('SUPABASE_SERVICE_ROLE_KEY'),
+    supabaseUrl: requiredInProduction('SUPABASE_URL'),
+    supabaseServiceRoleKey: requiredInProduction('SUPABASE_SERVICE_ROLE_KEY'),
     supabaseAnonKey: optional('SUPABASE_ANON_KEY'),
-    jwtSecret: optional('JWT_SECRET', 'dev-secret-change-me'),
+    jwtSecret: requiredInProduction('JWT_SECRET', (process.env.NODE_ENV ?? 'development') === 'production' ? '' : 'dev-secret-change-me'),
     jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
     geminiApiKey: optional('GEMINI_API_KEY'),
-    geminiModel: process.env.GEMINI_MODEL ?? 'gemini-3.6-flash',
+    geminiModel: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     smtpHost: process.env.SMTP_HOST ?? 'smtp.gmail.com',

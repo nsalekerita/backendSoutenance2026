@@ -4,9 +4,34 @@ exports.refuser = exports.accepter = void 0;
 exports.postuler = postuler;
 exports.mesCandidatures = mesCandidatures;
 exports.candidaturesPourOffre = candidaturesPourOffre;
+exports.getSignedUploadUrl = getSignedUploadUrl;
+exports.getPublicUrl = getPublicUrl;
+exports.candidaturesPourEntreprise = candidaturesPourEntreprise;
 const supabase_1 = require("../config/supabase");
 const notifications_1 = require("../notifications/notifications.service");
-async function postuler(etudiantId, offreId, cv_url, message) {
+const BUCKETS_CANDIDATURE = new Set(['cvs', 'lettres-motivation', 'recommandations']);
+function assertBucket(bucket) {
+    if (!BUCKETS_CANDIDATURE.has(bucket)) {
+        const err = new Error('Type de document non autorisé'); err.status = 422; throw err;
+    }
+}
+async function getSignedUploadUrl(etudiantId, bucket, fileName) {
+    assertBucket(bucket);
+    const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${etudiantId}/${Date.now()}-${safeName}`;
+    const { data, error } = await supabase_1.supabaseAdmin.storage.from(bucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    return { upload_url: data.signedUrl, cle_fichier: path };
+}
+function getPublicUrl(etudiantId, bucket, path) {
+    assertBucket(bucket);
+    if (!String(path).startsWith(`${etudiantId}/`)) {
+        const err = new Error('Document non autorisé'); err.status = 403; throw err;
+    }
+    const { data } = supabase_1.supabaseAdmin.storage.from(bucket).getPublicUrl(path);
+    return { url: data.publicUrl };
+}
+async function postuler(etudiantId, offreId, cv_url, message, documents = {}) {
     const { data: existante } = await supabase_1.supabaseAdmin
         .from('candidatures')
         .select('id')
@@ -20,7 +45,7 @@ async function postuler(etudiantId, offreId, cv_url, message) {
     }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('candidatures')
-        .insert({ offre_id: offreId, etudiant_id: etudiantId, cv_url, message, statut: 'envoyee' })
+        .insert({ offre_id: offreId, etudiant_id: etudiantId, cv_url, message, statut: 'envoyee', ...documents })
         .select('*, offres(titre, entreprise_id)')
         .single();
     if (error)
@@ -90,6 +115,13 @@ async function candidaturesPourOffre(offreId, entrepriseId) {
         .order('created_at', { ascending: false });
     if (error)
         throw error;
+    return data ?? [];
+}
+async function candidaturesPourEntreprise(entrepriseId) {
+    const { data, error } = await supabase_1.supabaseAdmin.from('candidatures')
+        .select('*, etudiants(id, user_id, nom, prenom, filiere, specialite, photo_url), offres!inner(id, titre, entreprise_id)')
+        .eq('offres.entreprise_id', entrepriseId).order('created_at', { ascending: false });
+    if (error) throw error;
     return data ?? [];
 }
 const LIBELLES_STATUT = {

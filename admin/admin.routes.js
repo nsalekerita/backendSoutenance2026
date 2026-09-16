@@ -11,4 +11,5 @@ router.patch('/offres/:id/statut', controller.changerStatutOffre);
 router.patch('/entreprises/:id/valider', controller.validerEntreprise);
 router.patch('/comptes/:id/bloquer', controller.bloquerCompte);
 router.patch('/comptes/:id/debloquer', controller.debloquerCompte);
+router.delete('/comptes/:id', controller.supprimerCompte);
 module.exports = router;

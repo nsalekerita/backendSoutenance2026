@@ -12,6 +12,7 @@ const filieresRoutes = require("./filieres/filieres.routes");
 const adminRoutes = require("./admin/admin.routes");
 const iaRoutes = require("./ia/ia.routes");
 const notificationsRoutes = require("./notifications/notifications.routes");
+const messagesRoutes = require("./messages/messages.routes");
 const { notFoundMiddleware, errorMiddleware } = require("./middleware/error.middleware");
 const { env } = require("./config/env");
 
@@ -48,5 +49,6 @@ app.use('/api/filieres', filieresRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ia', iaRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/messages', messagesRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

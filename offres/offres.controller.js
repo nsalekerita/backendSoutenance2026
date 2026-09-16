@@ -1,5 +1,5 @@
 "use strict";
-exports.matching = exports.mesOffres = exports.getById = exports.listerPubliques = exports.publier = void 0;
+exports.supprimer = exports.matching = exports.mesOffres = exports.getById = exports.listerPubliques = exports.publier = void 0;
 const asyncHandler_1 = require("../utils/asyncHandler");
 const response_1 = require("../utils/response");
 const service = require("./offres.service");
@@ -37,6 +37,10 @@ exports.mesOffres = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     if (req.user?.role !== 'entreprise' || !req.user.profileId)
         return (0, response_1.fail)(res, 'Réservé aux entreprises', 403);
     const data = await service.listerOffresEntreprise(req.user.profileId);
+    return (0, response_1.ok)(res, data);
+});
+exports.supprimer = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const data = await service.supprimerOffre(req.params.id, req.user.profileId);
     return (0, response_1.ok)(res, data);
 });
 exports.matching = (0, asyncHandler_1.asyncHandler)(async (req, res) => {

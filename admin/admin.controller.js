@@ -2,6 +2,7 @@
 exports.validerEntreprise = exports.changerStatutOffre = exports.offres = exports.comptes = exports.stats = void 0;
 exports.bloquerCompte = void 0;
 exports.debloquerCompte = void 0;
+exports.supprimerCompte = void 0;
 const asyncHandler_1 = require("../utils/asyncHandler");
 const response_1 = require("../utils/response");
 const service = require("./admin.service");
@@ -35,5 +36,9 @@ exports.bloquerCompte = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
 });
 exports.debloquerCompte = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     const data = await service.debloquerCompte(req.params.id);
+    return (0, response_1.ok)(res, data);
+});
+exports.supprimerCompte = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
+    const data = await service.supprimerCompte(req.params.id, req.user.id);
     return (0, response_1.ok)(res, data);
 });

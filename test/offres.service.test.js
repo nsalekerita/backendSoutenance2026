@@ -4,7 +4,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 jest.mock('../config/supabase', () => {
   const insertedPayloads = [];
   const supabaseAdmin = {
-    from: jest.fn(() => ({
+    from: jest.fn((table) => ({
       insert: jest.fn((payload) => {
         insertedPayloads.push(payload);
         return {
@@ -13,6 +13,9 @@ jest.mock('../config/supabase', () => {
           }),
         };
       }),
+      select: jest.fn(() => table === 'administrateurs'
+        ? Promise.resolve({ data: [], error: null })
+        : Promise.resolve({ data: [], error: null })),
     })),
     __insertedPayloads: insertedPayloads,
   };

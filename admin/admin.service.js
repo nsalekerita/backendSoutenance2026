@@ -7,6 +7,7 @@ exports.debloquerCompte = debloquerCompte;
 exports.listerOffresPourAdmin = listerOffresPourAdmin;
 exports.changerStatutOffre = changerStatutOffre;
 exports.validerEntreprise = validerEntreprise;
+exports.supprimerCompte = supprimerCompte;
 const supabase_1 = require("../config/supabase");
 const notifications_1 = require("../notifications/notifications.service");
 async function statistiquesGlobales() {
@@ -30,7 +31,7 @@ async function statistiquesGlobales() {
     };
 }
 async function listerComptes(role) {
-    let query = supabase_1.supabaseAdmin.from('users').select('id, email, role, created_at');
+    let query = supabase_1.supabaseAdmin.from('users').select('id, email, role, actif, created_at');
     if (role)
         query = query.eq('role', role);
     const { data, error } = await query.order('created_at', { ascending: false });
@@ -59,6 +60,20 @@ async function bloquerCompte(userId) {
 }
 async function debloquerCompte(userId) {
     return setCompteActif(userId, true);
+}
+async function supprimerCompte(userId, adminUserId) {
+    if (userId === adminUserId) {
+        const err = new Error('Vous ne pouvez pas supprimer votre propre compte');
+        err.status = 409;
+        throw err;
+    }
+    const { data, error } = await supabase_1.supabaseAdmin.from('users').delete()
+        .eq('id', userId).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) {
+        const err = new Error('Compte introuvable'); err.status = 404; throw err;
+    }
+    return data;
 }
 async function listerOffresPourAdmin(statut) {
     let query = supabase_1.supabaseAdmin.from('offres').select('*, entreprises(nom)');
