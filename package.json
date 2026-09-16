@@ -1,15 +1,17 @@
 {
   "name": "iai-horizon-backend",
   "version": "1.0.0",
-  "description": "Backend Node.js (JavaScript) pour la plateforme IAI Horizon (Supabase + Gemini API)",
+  "description": "Backend Node.js pour IAI Horizon (PostgreSQL AWS RDS, S3/CloudFront et Gemini)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "jest"
+    "test": "jest",
+    "migrate": "node db/migrate.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.116.0",
+    "@aws-sdk/client-s3": "^3.1133.0",
+    "@aws-sdk/s3-request-presigner": "^3.1133.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -21,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "nodemailer": "^10.0.3",
+    "pg": "^8.23.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

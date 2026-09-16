@@ -1,4 +1,4 @@
-# IAI Horizon — Backend (JavaScript pur, Node.js/Express + Supabase)
+# IAI Horizon — Backend AWS (Node.js/Express + PostgreSQL RDS + S3/CloudFront)
 
 Ceci est la version **JavaScript** (pas TypeScript) du backend — même code, même logique,
 directement exécutable avec `node`, sans étape de compilation.
@@ -8,23 +8,22 @@ directement exécutable avec `node`, sans étape de compilation.
 ```bash
 cd backend
 npm install
-cp .env.example .env   # puis renseigne SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, GEMINI_API_KEY...
-npm start               # ou : node server.js
-npm test                # exécute la suite de tests (jest)
+cp .env.example .env   # puis renseigne DATABASE_URL, JWT_SECRET, GEMINI_API_KEY...
+npm run migrate        # applique db/postgres/*.sql sur RDS
+npm start              # ou : node server.js
+npm test               # exécute la suite de tests (jest)
 ```
 
 Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
 
 ## Avant de démarrer
 
-1. Crée un projet sur https://supabase.com
-2. Exécute `db/migration.sql` puis `db/migration_rls.sql` dans le SQL editor de ton projet Supabase
-   (le second active la Row Level Security en défense en profondeur — voir le fichier pour le détail).
-3. Crée les buckets Storage `cvs`, `lettres-motivation`, `recommandations`,
-   `photos` et `notes-bulletins`. Les trois premiers doivent être configurés
-   selon la politique de diffusion souhaitée pour les pièces de candidature.
-4. Récupère tes clés dans Project Settings > API et remplis le fichier `.env`.
-5. Récupère une clé API Gemini (aistudio.google.com/apikey) pour les fonctionnalités IA
+1. Crée une base PostgreSQL et un rôle applicatif dédiés sur AWS RDS.
+2. Renseigne `DATABASE_URL`, puis lance `npm run migrate`.
+3. Le bucket privé `kerita-media` reçoit tous les fichiers sous des préfixes
+   (`cvs/`, `photos/`, `notes-bulletins/`, etc.). Les uploads utilisent des URL
+   S3 présignées et les lectures passent par CloudFront/OAC.
+4. Récupère une clé API Gemini (aistudio.google.com/apikey) pour les fonctionnalités IA
    (recommandation, chatbot, aide contextuelle).
 6. En production, renseigne `CORS_ALLOWED_ORIGINS` avec le(s) domaine(s) exact(s) du front —
    sans cette variable, en environnement `NODE_ENV=development` toutes les origines sont acceptées.
@@ -35,7 +34,7 @@ Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
 backend/
 |-- server.js                 -> point d'entrée (démarre le serveur)
 |-- app.js                    -> configuration Express + montage des routes
-|-- config/                   -> env.js, supabase.js
+|-- config/                   -> env.js, database.js, storage.js
 |-- middleware/                -> auth.middleware.js, error.middleware.js
 |-- utils/                     -> jwt.js, password.js, response.js, asyncHandler.js
 |-- auth/                      -> authentification etudiant / administrateur / entreprise
@@ -50,7 +49,8 @@ backend/
 |-- candidatures/
 |-- filieres/                    -> fiches filières + critères de scoring
 |-- admin/
-`-- db/migration.sql            -> ta migration SQL (schéma complet Supabase)
+|-- infrastructure/             -> CloudFormation, Nginx, PM2 et déploiement
+`-- db/postgres/                -> migrations PostgreSQL AWS RDS
 ```
 
 ## Points d'entrée API (résumé)
@@ -77,14 +77,12 @@ propre OTP distinct.
 
 ## Testé
 
-Ce code a été compilé depuis la version TypeScript (qui passait `tsc --noEmit` sans erreur),
-puis lancé avec `node server.js` : le serveur démarre et répond correctement sur `/health`.
+La suite Jest couvre les utilitaires, les protections d'accès et les services critiques.
 
 ## Limite connue
 
 - **Recherche vectorielle RAG** (`ia/chatbot.service.js`) : utilise une recherche texte simple ;
-  la colonne `embedding` et l'index `ivfflat` sont déjà en base pour brancher une vraie recherche
-  par similarité une fois un pipeline d'embeddings en place.
+  `embedding` est conservé en JSONB en attendant un pipeline pgvector dédié.
 
 ## Sécurité
 
@@ -95,10 +93,8 @@ puis lancé avec `node server.js` : le serveur démarre et répond correctement 
 - CORS restreint via `CORS_ALLOWED_ORIGINS` en production.
 - Les erreurs 500 ne renvoient jamais leur message brut au client en production
   (`middleware/error.middleware.js`).
-- En production, le serveur refuse de démarrer si `SUPABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY` ou `JWT_SECRET` manque.
-- `db/migration_rls.sql` active la Row Level Security sur toutes les tables (défense en profondeur ;
-  le backend utilise la clé service role qui contourne la RLS, donc les vérifications applicatives
-  restent la protection principale).
+- En production, le serveur refuse de démarrer si `DATABASE_URL` ou `JWT_SECRET` manque.
+- Le bucket S3 bloque tout accès public. CloudFront est le seul lecteur public,
+  via une Origin Access Control limitée à la distribution Kerita.
 - Blocage de compte administrateur (`admin/admin.service.js`, `bloquerCompte`/`debloquerCompte`) :
   utilise la colonne `users.actif` (ajoutée dans `db/migration.sql`), vérifiée aussi au login.

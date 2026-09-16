@@ -1,12 +1,11 @@
 "use strict";
 const { supabaseAdmin } = require('../config/supabase');
+const { query } = require('../config/database');
 
 async function assertRelation(entrepriseId, etudiantId) {
-  const { data, error } = await supabaseAdmin.from('candidatures')
-    .select('id, offres!inner(entreprise_id)').eq('etudiant_id', etudiantId)
-    .eq('offres.entreprise_id', entrepriseId).limit(1);
-  if (error) throw error;
-  if (!data?.length) { const err = new Error('Aucune candidature ne relie cet étudiant à votre entreprise'); err.status = 403; throw err; }
+  const { rows } = await query(`SELECT c.id FROM candidatures c JOIN offres o ON o.id=c.offre_id
+    WHERE c.etudiant_id=$1 AND o.entreprise_id=$2 LIMIT 1`, [etudiantId, entrepriseId]);
+  if (!rows.length) { const err = new Error('Aucune candidature ne relie cet étudiant à votre entreprise'); err.status = 403; throw err; }
 }
 
 async function getOrCreateConversation(entrepriseId, etudiantId) {

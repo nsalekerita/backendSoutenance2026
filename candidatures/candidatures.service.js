@@ -9,6 +9,7 @@ exports.getPublicUrl = getPublicUrl;
 exports.candidaturesPourEntreprise = candidaturesPourEntreprise;
 const supabase_1 = require("../config/supabase");
 const notifications_1 = require("../notifications/notifications.service");
+const { query } = require('../config/database');
 const BUCKETS_CANDIDATURE = new Set(['cvs', 'lettres-motivation', 'recommandations']);
 function assertBucket(bucket) {
     if (!BUCKETS_CANDIDATURE.has(bucket)) {
@@ -118,11 +119,17 @@ async function candidaturesPourOffre(offreId, entrepriseId) {
     return data ?? [];
 }
 async function candidaturesPourEntreprise(entrepriseId) {
-    const { data, error } = await supabase_1.supabaseAdmin.from('candidatures')
-        .select('*, etudiants(id, user_id, nom, prenom, filiere, specialite, photo_url), offres!inner(id, titre, entreprise_id)')
-        .eq('offres.entreprise_id', entrepriseId).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data ?? [];
+    const { rows } = await query(`
+        SELECT c.*,
+          json_build_object('id', e.id, 'user_id', e.user_id, 'nom', e.nom, 'prenom', e.prenom,
+            'filiere', e.filiere, 'specialite', e.specialite, 'photo_url', e.photo_url) AS etudiants,
+          json_build_object('id', o.id, 'titre', o.titre, 'entreprise_id', o.entreprise_id) AS offres
+        FROM candidatures c
+        JOIN etudiants e ON e.id = c.etudiant_id
+        JOIN offres o ON o.id = c.offre_id
+        WHERE o.entreprise_id = $1
+        ORDER BY c.created_at DESC`, [entrepriseId]);
+    return rows;
 }
 const LIBELLES_STATUT = {
     vue: 'a été vue par le recruteur',

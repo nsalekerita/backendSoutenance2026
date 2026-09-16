@@ -1,12 +1,7 @@
 require('dotenv').config();
 
 const bcrypt = require('bcryptjs');
-const { createClient } = require('@supabase/supabase-js');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { transaction, pool } = require('./config/database');
 
 async function main() {
   const email = process.env.ADMIN_EMAIL;
@@ -30,29 +25,18 @@ async function main() {
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(password, salt);
 
-  const { data: user, error: userErr } = await supabase
-    .from('users')
-    .insert({ email, password_hash, role: 'administrateur' })
-    .select('id, email')
-    .single();
-
-  if (userErr) {
-    console.error('Erreur création user:', userErr.message);
-    process.exitCode = 1;
-    return;
-  }
-
-  const { error: adminErr } = await supabase
-    .from('administrateurs')
-    .insert({ user_id: user.id, nom: nomAdmin });
-
-  if (adminErr) {
-    console.error('Erreur création profil administrateur:', adminErr.message);
-    process.exitCode = 1;
-    return;
-  }
+  const user = await transaction(async (client) => {
+    const created = await client.query(
+      `INSERT INTO users(email, password_hash, role, email_verifie)
+       VALUES($1, $2, 'administrateur', true) RETURNING id, email`,
+      [email, password_hash],
+    );
+    await client.query('INSERT INTO administrateurs(user_id, nom) VALUES($1, $2)', [created.rows[0].id, nomAdmin]);
+    return created.rows[0];
+  });
 
   console.log('✅ Compte administrateur créé avec succès :', user.email);
 }
 
-main();
+main().catch((error) => { console.error('Erreur création administrateur:', error.message); process.exitCode = 1; })
+  .finally(() => pool.end());

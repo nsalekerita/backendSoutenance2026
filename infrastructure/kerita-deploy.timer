@@ -1,0 +1,11 @@
+[Unit]
+Description=Check GitHub regularly for Kerita backend updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Persistent=true
+Unit=kerita-deploy.service
+
+[Install]
+WantedBy=timers.target

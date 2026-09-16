@@ -165,7 +165,7 @@ async function terminerWizard(etudiantId) {
 }
 
 /**
- * Upload de CV : on stocke le fichier dans le bucket Supabase Storage "cvs".
+ * Upload de CV : stockage privé dans le préfixe "cvs/" de kerita-media.
  * Les clés de retour (upload_url / cle_fichier) matchent ce qu'attend le
  * client Flutter — ne pas renommer sans mettre à jour student_profile_screen.dart.
  */
@@ -191,10 +191,7 @@ async function confirmerCv(etudiantId, cheminFichier, nomFichier) {
 }
 
 /**
- * Upload de photo de profil : on stocke le fichier dans le bucket Supabase
- * Storage "photos". Le bucket doit exister côté Supabase (Storage > New bucket)
- * et être configuré en public pour que photo_url soit directement affichable
- * via Image.network côté Flutter.
+ * Upload de photo : stockage privé dans "photos/" et lecture via CloudFront.
  */
 async function getSignedPhotoUploadUrl(etudiantId, fileName) {
     const path = `${etudiantId}/${Date.now()}-${fileName}`;
@@ -219,9 +216,8 @@ async function confirmerPhoto(etudiantId, cheminFichier) {
 }
 
 /**
- * Notes = images de bulletins/relevés, stockées dans le bucket Supabase
- * Storage "notes-bulletins" (à créer côté Supabase, en public pour que l'URL
- * soit directement affichable via Image.network côté Flutter). Chaque note
+ * Notes = images de bulletins/relevés, stockées dans "notes-bulletins/" du
+ * bucket S3 privé et distribuées via CloudFront. Chaque note
  * est une ligne de la table "etudiant_notes" : id, etudiant_id,
  * chemin_fichier, nom_fichier, url, semestre, created_at.
  */
