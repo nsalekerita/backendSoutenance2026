@@ -20,7 +20,9 @@ Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
 1. Crée un projet sur https://supabase.com
 2. Exécute `db/migration.sql` puis `db/migration_rls.sql` dans le SQL editor de ton projet Supabase
    (le second active la Row Level Security en défense en profondeur — voir le fichier pour le détail).
-3. Crée un bucket Storage privé nommé `cvs` (Storage > New bucket) pour l'upload des CV.
+3. Crée les buckets Storage `cvs`, `lettres-motivation`, `recommandations`,
+   `photos` et `notes-bulletins`. Les trois premiers doivent être configurés
+   selon la politique de diffusion souhaitée pour les pièces de candidature.
 4. Récupère tes clés dans Project Settings > API et remplis le fichier `.env`.
 5. Récupère une clé API Gemini (aistudio.google.com/apikey) pour les fonctionnalités IA
    (recommandation, chatbot, aide contextuelle).
@@ -40,10 +42,10 @@ backend/
 |-- profils/                    -> wizard, profil étudiant, gestion de la progression
 |-- scoring/                    -> moteur de scoring (logique pure, sans IA)
 |-- ia/
-|   |-- recommendation.service.js    -> appel Claude, rédaction de la recommandation
-|   |-- chatbot.service.js           -> appel Claude + RAG (contexte étudiant + base_connaissances)
-|   |-- aide-contextuelle.service.js -> appel Claude (réponses courtes)
-|   `-- claude.client.js             -> wrapper autour de l'API Anthropic
+|   |-- recommendation.service.js    -> appel Gemini, rédaction de la recommandation
+|   |-- chatbot.service.js           -> appel Gemini + RAG (contexte étudiant + base_connaissances)
+|   |-- aide-contextuelle.service.js -> appel Gemini (réponses courtes)
+|   `-- gemini.client.js             -> client de l'API Google Gemini
 |-- offres/                     -> CRUD offres, matching, validation administrateur
 |-- candidatures/
 |-- filieres/                    -> fiches filières + critères de scoring
@@ -57,22 +59,29 @@ backend/
 - `GET  /api/auth/me`
 - `GET/PATCH /api/profils/moi`, `/moi/competences`, `/moi/interets`, `/moi/wizard/*`, `/moi/cv/upload-url`
 - `GET  /api/offres`, `GET /api/offres/:id`, `POST /api/offres` (entreprise)
-- `POST /api/candidatures`, `GET /api/candidatures/moi`, `PATCH /api/candidatures/:id/accepter|refuser`
+- `POST /api/candidatures`, upload des pièces, `GET /api/candidatures/moi|tous`,
+  `PATCH /api/candidatures/:id/accepter|refuser`
+- `GET/POST /api/messages` pour la messagerie entreprise–étudiant
 - `GET  /api/filieres`, `POST /api/filieres` (administrateur)
 - `GET  /api/admin/stats`, `/admin/comptes`, `/admin/offres`, `PATCH /admin/offres/:id/statut`
 - `POST /api/ia/recommandations/generer`, `GET /api/ia/recommandations/derniere`
 - `POST /api/ia/chat`, `GET /api/ia/chat/:conversationId`
 - `POST /api/ia/aide-contextuelle`
 
+## Vérification de l'e-mail
+
+L'OTP d'inscription est demandé uniquement juste après la création d'un
+compte classique. Une connexion ultérieure par e-mail/mot de passe n'est pas
+bloquée par `email_verifie`. La réinitialisation de mot de passe conserve son
+propre OTP distinct.
+
 ## Testé
 
 Ce code a été compilé depuis la version TypeScript (qui passait `tsc --noEmit` sans erreur),
 puis lancé avec `node server.js` : le serveur démarre et répond correctement sur `/health`.
 
-## Reste à finaliser (voir commentaires dans le code)
+## Limite connue
 
-- **Google OAuth** (`auth/auth.service.js`, fonction `loginOrRegisterWithGoogle`) : à connecter
-  avec la vérification du `id_token` Google côté serveur.
 - **Recherche vectorielle RAG** (`ia/chatbot.service.js`) : utilise une recherche texte simple ;
   la colonne `embedding` et l'index `ivfflat` sont déjà en base pour brancher une vraie recherche
   par similarité une fois un pipeline d'embeddings en place.
@@ -86,6 +95,8 @@ puis lancé avec `node server.js` : le serveur démarre et répond correctement 
 - CORS restreint via `CORS_ALLOWED_ORIGINS` en production.
 - Les erreurs 500 ne renvoient jamais leur message brut au client en production
   (`middleware/error.middleware.js`).
+- En production, le serveur refuse de démarrer si `SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY` ou `JWT_SECRET` manque.
 - `db/migration_rls.sql` active la Row Level Security sur toutes les tables (défense en profondeur ;
   le backend utilise la clé service role qui contourne la RLS, donc les vérifications applicatives
   restent la protection principale).

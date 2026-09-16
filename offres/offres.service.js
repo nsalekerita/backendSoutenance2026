@@ -5,6 +5,7 @@ exports.listerOffresValidees = listerOffresValidees;
 exports.getOffre = getOffre;
 exports.listerOffresEntreprise = listerOffresEntreprise;
 exports.matchingEtudiants = matchingEtudiants;
+exports.supprimerOffre = supprimerOffre;
 const supabase_1 = require("../config/supabase");
 const notifications_1 = require("../notifications/notifications.service");
 /** Liste blanche des champs acceptés à la création d'une offre : évite le mass-assignment. */
@@ -70,6 +71,17 @@ async function listerOffresEntreprise(entrepriseId) {
     if (error)
         throw error;
     return data ?? [];
+}
+async function supprimerOffre(offreId, entrepriseId) {
+    const { data, error } = await supabase_1.supabaseAdmin.from('offres').delete()
+        .eq('id', offreId).eq('entreprise_id', entrepriseId).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) {
+        const err = new Error('Offre introuvable ou non autorisée');
+        err.status = 404;
+        throw err;
+    }
+    return data;
 }
 /**
  * "Matching auto via API" : calcule les étudiants compatibles avec une offre

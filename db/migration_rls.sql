@@ -33,10 +33,9 @@ alter table base_connaissances enable row level security;
 alter table otp_codes enable row level security;
 alter table device_tokens enable row level security;
 alter table notifications enable row level security;
-
--- etudiant_notes est créée hors migration.sql (voir profils.service.js) ;
--- protège-la de la même façon si tu la crées via une migration séparée :
--- alter table etudiant_notes enable row level security;
+alter table etudiant_notes enable row level security;
+alter table entreprise_conversations enable row level security;
+alter table entreprise_messages enable row level security;
 
 -- Aucune policy n'est créée : par conception, seul le backend (clé
 -- service role) doit accéder à ces données. Si un usage futur nécessite un

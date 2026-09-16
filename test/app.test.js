@@ -5,6 +5,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 
 const request = require('supertest');
 const { app } = require('../app');
+const { signToken } = require('../utils/jwt');
 
 describe('GET /health', () => {
   test('returns 200 and service status', async () => {
@@ -31,5 +32,23 @@ describe('protected routes', () => {
   test('reject requests with an invalid token', async () => {
     const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer invalid-token');
     expect(res.status).toBe(401);
+  });
+
+  test('protects the specific company offers route before the dynamic /:id route', async () => {
+    const res = await request(app).get('/api/offres/entreprise/mes-offres');
+    expect(res.status).toBe(401);
+  });
+
+  test('protects candidature uploads and company messaging', async () => {
+    const upload = await request(app).post('/api/candidatures/upload-url');
+    const messages = await request(app).get('/api/messages/conversation/00000000-0000-0000-0000-000000000000');
+    expect(upload.status).toBe(401);
+    expect(messages.status).toBe(401);
+  });
+
+  test('reserves filiere creation for administrators', async () => {
+    const token = signToken({ id: 'user-1', email: 'student@example.com', role: 'etudiant', profileId: 'profile-1' });
+    const res = await request(app).post('/api/filieres').set('Authorization', `Bearer ${token}`).send({ nom: 'Test' });
+    expect(res.status).toBe(403);
   });
 });

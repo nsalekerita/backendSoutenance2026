@@ -1,10 +1,10 @@
 "use strict";
 const { Router } = require("express");
-const { requireAuth } = require("../middleware/auth.middleware");
+const { requireAuth, requireRole } = require("../middleware/auth.middleware");
 const controller = require("./filieres.controller");
 const router = Router();
 router.get('/', controller.lister);
 router.get('/:id', controller.getById);
-router.post('/', requireAuth, controller.creer);
-router.post('/:id/criteres', requireAuth, controller.ajouterCritere);
+router.post('/', requireAuth, requireRole('administrateur'), controller.creer);
+router.post('/:id/criteres', requireAuth, requireRole('administrateur'), controller.ajouterCritere);
 module.exports = router;
