@@ -7,6 +7,6 @@ Wants=network-online.target
 Type=oneshot
 User=ubuntu
 Environment=APP_DIR=/home/ubuntu/kerita-backend
-Environment=DEPLOY_BRANCH=feat/aws-self-hosted-backend
+Environment=DEPLOY_BRANCH=aws-self-hosted-backend
 ExecStart=/home/ubuntu/kerita-backend/infrastructure/deploy-ec2.sh
 TimeoutStartSec=300

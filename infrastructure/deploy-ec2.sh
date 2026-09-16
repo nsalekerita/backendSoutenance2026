@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/home/ubuntu/kerita-backend}"
-BRANCH="${DEPLOY_BRANCH:-feat/aws-self-hosted-backend}"
+BRANCH="${DEPLOY_BRANCH:-aws-self-hosted-backend}"
 
 cd "$APP_DIR"
 git fetch origin "$BRANCH"
