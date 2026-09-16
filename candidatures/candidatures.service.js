@@ -110,7 +110,7 @@ async function candidaturesPourOffre(offreId, entrepriseId) {
     await assertOffreAppartientAEntreprise(offreId, entrepriseId);
     const { data, error } = await supabase_1.supabaseAdmin
         .from('candidatures')
-        .select('*, etudiants(nom, prenom)')
+        .select('*, etudiants(id, nom, prenom, filiere, specialite)')
         .eq('offre_id', offreId)
         .order('created_at', { ascending: false });
     if (error)
