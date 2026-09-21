@@ -9,10 +9,11 @@
     "test": "jest"
   },
   "dependencies": {
+    "@mistralai/mistralai": "^2.7.0",
     "@supabase/supabase-js": "^2.116.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "firebase-admin": "^14.3.0",

@@ -36,7 +36,11 @@ notée lui correspond, puis liste 3 technologies, 2 certifications et 2 métiers
     if (error)
         throw error;
     await supabase_1.supabaseAdmin.from('scores_filieres').insert(scores.map((s) => ({ recommandation_id: recommandation.id, filiere_id: s.filiere_id, score: s.score })));
-    return { recommandation, scores };
+    return {
+        recommandation,
+        scores,
+        filiere_recommandee: scores[0],
+    };
 }
 
 async function derniereRecommandation(etudiantId) {

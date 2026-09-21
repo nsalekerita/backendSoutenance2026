@@ -8,6 +8,21 @@ function toGeminiRole(role) {
     return role === 'assistant' ? 'model' : 'user';
 }
 
+function toGeminiParts(message) {
+    const parts = [{ text: message.content }];
+    for (const attachment of message.attachments ?? []) {
+        if (attachment?.mimeType && attachment?.data) {
+            parts.push({
+                inlineData: {
+                    mimeType: attachment.mimeType,
+                    data: attachment.data,
+                },
+            });
+        }
+    }
+    return parts;
+}
+
 /** Petit wrapper autour de l'API Gemini generateContent, partagé par les 3 services IA. */
 async function callGemini(messages, system, maxTokens = 1000) {
     if (!env_1.env.geminiApiKey) {
@@ -18,7 +33,7 @@ async function callGemini(messages, system, maxTokens = 1000) {
 
     const contents = messages.map((m) => ({
         role: toGeminiRole(m.role),
-        parts: [{ text: m.content }],
+        parts: toGeminiParts(m),
     }));
 
     const body = {
