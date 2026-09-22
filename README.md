@@ -13,7 +13,16 @@ npm start               # ou : node server.js
 npm test                # exécute la suite de tests (jest)
 ```
 
-Le serveur démarre sur http://localhost:4000 (route de test : GET /health).
+Le serveur démarre sur le port `4000` et écoute sur toutes les interfaces réseau
+(route de test : `GET /health`). Pour le frontend, l'URL dépend de l'appareil :
+
+- navigateur sur le même PC : `http://localhost:4000`
+- émulateur Android Studio : `http://10.0.2.2:4000`
+- téléphone Android réel connecté au même Wi-Fi : `http://ADRESSE_IP_DU_PC:4000`
+
+Sur Android, si l'API est encore en HTTP, ajoute `android:usesCleartextTraffic="true"`
+dans la balise `<application>` de `android/app/src/main/AndroidManifest.xml`, et
+ajoute la permission `<uses-permission android:name="android.permission.INTERNET" />`.
 
 ## Avant de démarrer
 
