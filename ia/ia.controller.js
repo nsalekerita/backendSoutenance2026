@@ -27,7 +27,9 @@ exports.discuter = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     return (0, response_1.ok)(res, data);
 });
 exports.historiqueConversation = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const data = await chatbotService.historiqueConversation(req.params.conversationId);
+    if (req.user?.role !== 'etudiant' || !req.user.profileId)
+        return (0, response_1.fail)(res, 'Réservé aux étudiants', 403);
+    const data = await chatbotService.historiqueConversation(req.params.conversationId, req.user.profileId);
     return (0, response_1.ok)(res, data);
 });
 exports.aideContextuelle = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
