@@ -1,5 +1,6 @@
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+let mockAttachmentSize = 7;
 
 function mockQuery(data) {
   const request = {
@@ -38,7 +39,7 @@ jest.mock('../config/supabase', () => ({
     }),
     storage: {
       from: jest.fn(() => ({
-        download: async () => ({ data: { arrayBuffer: async () => Buffer.from('fichier') }, error: null }),
+        download: async () => ({ data: { arrayBuffer: async () => Buffer.alloc(mockAttachmentSize) }, error: null }),
       })),
     },
   },
@@ -55,8 +56,18 @@ describe('chatbot.service (contexte étudiant)', () => {
     expect(contexte.texte).toContain('Génie logiciel (82%)');
     expect(contexte.piecesJointes).toHaveLength(2);
     expect(contexte.piecesJointes.map((piece) => piece.mimeType)).toEqual([
-      'application/pdf',
       'image/png',
+      'application/pdf',
     ]);
+  });
+
+  test('limite à 5 Mio le volume total de pièces jointes transmis', async () => {
+    mockAttachmentSize = 3 * 1024 * 1024;
+
+    const contexte = await construireContexteProfil('etudiant-1');
+
+    expect(contexte.piecesJointes).toHaveLength(1);
+    expect(contexte.piecesJointes[0].mimeType).toBe('image/png');
+    mockAttachmentSize = 7;
   });
 });

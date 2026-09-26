@@ -7,6 +7,7 @@ const supabase_1 = require("../config/supabase");
 const gemini_client_1 = require("./gemini.client");
 
 const MAX_PIECE_JOINTE_BYTES = 5 * 1024 * 1024;
+const MAX_TOTAL_PIECES_JOINTES_BYTES = 5 * 1024 * 1024;
 
 async function rechercherContexte(question) {
     const { data } = await supabase_1.supabaseAdmin
@@ -21,7 +22,7 @@ async function construireContexteProfil(etudiantId) {
     const [{ data: etudiant }, { data: competences }, { data: interets }, { data: wizard }, { data: notes }, { data: offres }, { data: scores }] = await Promise.all([
         supabase_1.supabaseAdmin
             .from('etudiants')
-            .select('nom, prenom, niveau, filiere, specialite')
+            .select('nom, prenom, niveau, filiere, specialite, cv_chemin, cv_nom_fichier')
             .eq('id', etudiantId)
             .single(),
         supabase_1.supabaseAdmin.from('etudiant_competences').select('competence_nom, niveau').eq('etudiant_id', etudiantId),
@@ -51,14 +52,24 @@ async function construireContexteProfil(etudiantId) {
 
 async function chargerPiecesJointes(etudiant, notes) {
     const fichiers = [];
-    if (etudiant.cv_chemin)
-        fichiers.push({ bucket: 'cvs', chemin: etudiant.cv_chemin });
     for (const note of notes)
         if (note.chemin_fichier)
             fichiers.push({ bucket: 'notes-bulletins', chemin: note.chemin_fichier });
+    if (etudiant.cv_chemin)
+        fichiers.push({ bucket: 'cvs', chemin: etudiant.cv_chemin });
 
-    const pieces = await Promise.all(fichiers.map((fichier) => chargerPieceJointe(fichier.bucket, fichier.chemin)));
-    return pieces.filter(Boolean);
+    const pieces = [];
+    let tailleTotale = 0;
+    for (const fichier of fichiers) {
+        if (tailleTotale >= MAX_TOTAL_PIECES_JOINTES_BYTES)
+            break;
+        const piece = await chargerPieceJointe(fichier.bucket, fichier.chemin);
+        if (!piece || tailleTotale + piece.taille > MAX_TOTAL_PIECES_JOINTES_BYTES)
+            continue;
+        tailleTotale += piece.taille;
+        pieces.push({ mimeType: piece.mimeType, data: piece.data });
+    }
+    return pieces;
 }
 
 async function chargerPieceJointe(bucket, chemin) {
@@ -71,7 +82,7 @@ async function chargerPieceJointe(bucket, chemin) {
     const contenu = Buffer.from(await data.arrayBuffer());
     if (contenu.length > MAX_PIECE_JOINTE_BYTES)
         return null;
-    return { mimeType, data: contenu.toString('base64') };
+    return { mimeType, data: contenu.toString('base64'), taille: contenu.length };
 }
 
 function mimeTypePour(chemin) {
@@ -125,7 +136,7 @@ Voici le profil de l'étudiant à qui tu parles, appuie-toi dessus pour personna
 ${contexteProfil.texte}
 
 Contexte documentaire additionnel si pertinent :
-${contexteTexte || '(aucun contexte spécifique trouvé)'}`, 700);
+${contexteTexte || '(aucun contexte spécifique trouvé)'}`, 1400);
     await supabase_1.supabaseAdmin.from('messages').insert({ conversation_id: convId, role: 'assistant', contenu: reponse });
     return { conversationId: convId, reponse };
 }

@@ -20,8 +20,17 @@ class HttpError extends Error {
         this.details = details;
     }
 }
+function normalizeEmail(email) {
+    return email.trim().toLowerCase();
+}
 async function assertEmailAvailable(email) {
-    const { data } = await supabase_1.supabaseAdmin.from('users').select('id').eq('email', email).maybeSingle();
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('email', normalizeEmail(email))
+        .maybeSingle();
+    if (error)
+        throw new HttpError(error.message, 500);
     if (data)
         throw new HttpError('Cette adresse e-mail est déjà utilisée', 409);
 }
@@ -29,7 +38,7 @@ async function createBaseUser(email, password, role) {
     const password_hash = await (0, password_1.hashPassword)(password);
     const { data, error } = await supabase_1.supabaseAdmin
         .from('users')
-        .insert({ email, password_hash, role })
+        .insert({ email: normalizeEmail(email), password_hash, role })
         .select('id, email, role')
         .single();
     if (error)
@@ -37,8 +46,9 @@ async function createBaseUser(email, password, role) {
     return data;
 }
 async function registerEtudiant(input) {
-    await assertEmailAvailable(input.email);
-    const user = await createBaseUser(input.email, input.password, 'etudiant');
+    const email = normalizeEmail(input.email);
+    await assertEmailAvailable(email);
+    const user = await createBaseUser(email, input.password, 'etudiant');
     const { data: etudiant, error } = await supabase_1.supabaseAdmin
         .from('etudiants')
         .insert({ user_id: user.id, nom: input.nom, prenom: input.prenom })
@@ -52,8 +62,9 @@ async function registerEtudiant(input) {
     return { requiresOtp: true, email: user.email };
 }
 async function registerEntreprise(input) {
-    await assertEmailAvailable(input.email);
-    const user = await createBaseUser(input.email, input.password, 'entreprise');
+    const email = normalizeEmail(input.email);
+    await assertEmailAvailable(email);
+    const user = await createBaseUser(email, input.password, 'entreprise');
     // NB (cf. spec) : l'entreprise n'a PAS besoin de validation administrateur pour créer
     // un compte ; statut_verification reste indicatif pour un futur badge "vérifiée".
     const { data: entreprise, error } = await supabase_1.supabaseAdmin
@@ -70,7 +81,7 @@ async function login(email, password) {
     const { data: user } = await supabase_1.supabaseAdmin
         .from('users')
         .select('id, email, password_hash, role, actif, email_verifie')
-        .eq('email', email)
+        .eq('email', normalizeEmail(email))
         .maybeSingle();
     if (!user)
         throw new HttpError('E-mail ou mot de passe incorrect', 401);
@@ -96,11 +107,18 @@ async function resolveProfileId(userId, role) {
  * Squelette fourni ; l'implémentation de la vérification du id_token Google
  * dépend du package choisi côté client (google_sign_in / googleapis côté back).
  */
+function normalizeGoogleRole(role) {
+    const normalized = String(role ?? '').trim().toLowerCase();
+    if (normalized === 'etudiant' || normalized === 'entreprise')
+        return normalized;
+    return '';
+}
 async function loginOrRegisterWithGoogle(googleIdToken, role) {
     const { env } = require('../config/env');
+    const normalizedRole = normalizeGoogleRole(role);
     if (!env.googleClientId)
         throw new HttpError('Connexion Google non configurée', 503);
-    if (!['etudiant', 'entreprise'].includes(role))
+    if (!normalizedRole)
         throw new HttpError('Rôle Google invalide', 422);
     let ticket;
     try {
@@ -118,9 +136,9 @@ async function loginOrRegisterWithGoogle(googleIdToken, role) {
     let { data: user } = await supabase_1.supabaseAdmin.from('users')
         .select('id, email, role, actif').eq('email', payload.email).maybeSingle();
     if (!user) {
-        user = await createBaseUser(payload.email, require('crypto').randomBytes(32).toString('hex'), role);
+        user = await createBaseUser(payload.email, require('crypto').randomBytes(32).toString('hex'), normalizedRole);
         await supabase_1.supabaseAdmin.from('users').update({ email_verifie: true }).eq('id', user.id);
-        if (role === 'etudiant') {
+        if (normalizedRole === 'etudiant') {
             const names = String(payload.name ?? '').trim().split(/\s+/);
             const { data: profil, error } = await supabase_1.supabaseAdmin.from('etudiants').insert({
                 user_id: user.id,
@@ -137,12 +155,13 @@ async function loginOrRegisterWithGoogle(googleIdToken, role) {
         }
     }
     if (user.actif === false) throw new HttpError('Ce compte a été désactivé', 403);
-    const normalizedRole = user.role === 'admin' ? 'administrateur' : user.role;
-    const profileId = await resolveProfileId(user.id, normalizedRole);
-    const authUser = { id: user.id, email: user.email, role: normalizedRole, profileId };
+    const resolvedRole = user.role === 'admin' ? 'administrateur' : user.role;
+    const profileId = await resolveProfileId(user.id, resolvedRole);
+    const authUser = { id: user.id, email: user.email, role: resolvedRole, profileId };
     return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function renvoyerCodeInscription(email) {
+    email = normalizeEmail(email);
     const { data: user } = await supabase_1.supabaseAdmin
         .from('users')
         .select('id, email_verifie')
@@ -156,6 +175,7 @@ async function renvoyerCodeInscription(email) {
     return { message: 'Un nouveau code a été envoyé.' };
 }
 async function verifierCodeInscription(email, code) {
+    email = normalizeEmail(email);
     const resultat = await (0, otp_1.verifierOtp)(email, code, 'inscription');
     if (!resultat.valide)
         throw new HttpError(resultat.raison, 400);
@@ -173,6 +193,7 @@ async function verifierCodeInscription(email, code) {
     return { token: (0, jwt_1.signToken)(authUser), user: authUser };
 }
 async function demanderReinitialisationMotDePasse(email) {
+    email = normalizeEmail(email);
     const { data: user } = await supabase_1.supabaseAdmin
         .from('users')
         .select('id')
@@ -184,6 +205,7 @@ async function demanderReinitialisationMotDePasse(email) {
     return { message: 'Si un compte existe pour cet e-mail, un code de réinitialisation a été envoyé.' };
 }
 async function reinitialiserMotDePasse(email, code, nouveauMotDePasse) {
+    email = normalizeEmail(email);
     const resultat = await (0, otp_1.verifierOtp)(email, code, 'reinitialisation');
     if (!resultat.valide)
         throw new HttpError(resultat.raison, 400);

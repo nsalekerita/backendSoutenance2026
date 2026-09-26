@@ -60,11 +60,13 @@ exports.login = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
     return (0, response_1.ok)(res, result);
 });
 exports.googleAuth = (0, asyncHandler_1.asyncHandler)(async (req, res) => {
-    const { idToken, role } = req.body ?? {};
-    if (!idToken || !['etudiant', 'entreprise'].includes(role)) {
-        return (0, response_1.fail)(res, 'idToken et role (etudiant|entreprise) requis', 422);
+    const { idToken, credential, role } = req.body ?? {};
+    const normalizedRole = typeof role === 'string' ? role.trim().toLowerCase() : '';
+    const googleToken = idToken ?? credential;
+    if (!googleToken || !['etudiant', 'entreprise'].includes(normalizedRole)) {
+        return (0, response_1.fail)(res, 'credential (ou idToken) et role (etudiant|entreprise) requis', 422);
     }
-    const result = await authService.loginOrRegisterWithGoogle(idToken, role);
+    const result = await authService.loginOrRegisterWithGoogle(googleToken, normalizedRole);
     return (0, response_1.ok)(res, result);
 });
 exports.me = (0, asyncHandler_1.asyncHandler)(async (req, res) => {

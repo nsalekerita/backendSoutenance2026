@@ -58,7 +58,12 @@ async function callGemini(messages, system, maxTokens = 1000) {
 
     if (!response.ok) {
         const text = await response.text();
-        throw new Error(`Erreur API Gemini (${response.status}): ${text}`);
+        const error = new Error(`Erreur API Gemini (${response.status}): ${text}`);
+        if (response.status === 503) {
+            error.status = 503;
+            error.publicMessage = "L'assistant IA est temporairement indisponible. Veuillez réessayer dans quelques instants.";
+        }
+        throw error;
     }
 
     const data = (await response.json());
